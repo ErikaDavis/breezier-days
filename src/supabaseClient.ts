@@ -5,113 +5,39 @@ type PremiumStatus = {
   error?: string | null;
 };
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-async function callFunction<T>(
-  functionName: string,
-  body: Record<string, unknown>
-): Promise<{ data: T | null; error: string | null }> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return { data: null, error: 'Supabase is not configured in this project.' };
-  }
-
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${functionName}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(body),
-      }
-    );
-
-    const text = await response.text();
-    let payload: unknown = null;
-
-    try {
-      payload = text ? JSON.parse(text) : null;
-    } catch {
-      payload = text || null;
-    }
-
-    if (!response.ok) {
-      const message =
-        payload &&
-        typeof payload === 'object' &&
-        'error' in payload &&
-        typeof (payload as { error?: unknown }).error === 'string'
-          ? (payload as { error: string }).error
-          : `Request failed (${response.status}).`;
-
-      return { data: null, error: message };
-    }
-
-    return { data: payload as T, error: null };
-  } catch (error) {
-    return {
-      data: null,
-      error: error instanceof Error ? error.message : 'Network error.',
-    };
-  }
-}
+// Breezier Days Premium — Stripe Payment Link
+const STRIPE_PAYMENT_LINK =
+  'https://buy.stripe.com/14AfZaa1cehs6NrcB03F600';
 
 export async function checkPremiumStatus(
-  identity: string,
-  migrateFrom?: string
+  _identity: string,
+  _migrateFrom?: string
 ): Promise<PremiumStatus> {
-  const result = await callFunction<Partial<PremiumStatus>>('check-premium-status', {
-    identity,
-    migrateFrom,
-  });
-
-  if (result.error) {
-    return {
-      isPremium: false,
-      currentPeriodEnd: null,
-      cancelAtPeriodEnd: false,
-      error: result.error,
-    };
-  }
-
+  // Temporary until secure Stripe subscription verification is connected.
   return {
-    isPremium: Boolean(result.data?.isPremium),
-    currentPeriodEnd: result.data?.currentPeriodEnd ?? null,
-    cancelAtPeriodEnd: Boolean(result.data?.cancelAtPeriodEnd),
+    isPremium: false,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
     error: null,
   };
 }
 
 export async function createCheckoutSession(
-  identity: string,
-  origin: string
+  _identity: string,
+  _origin: string
 ): Promise<{ url: string | null; error: string | null }> {
-  const result = await callFunction<{ url?: string }>('create-checkout-session', {
-    identity,
-    origin,
-  });
-
   return {
-    url: result.data?.url ?? null,
-    error: result.error,
+    url: STRIPE_PAYMENT_LINK,
+    error: null,
   };
 }
 
 export async function createPortalSession(
-  identity: string,
-  origin: string
+  _identity: string,
+  _origin: string
 ): Promise<{ url: string | null; error: string | null }> {
-  const result = await callFunction<{ url?: string }>('create-portal-session', {
-    identity,
-    origin,
-  });
-
   return {
-    url: result.data?.url ?? null,
-    error: result.error,
+    url: null,
+    error: 'Subscription management is not connected yet.',
   };
 }
