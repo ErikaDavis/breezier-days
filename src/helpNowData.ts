@@ -94,3 +94,4 @@ for (const s of newHelpNowSituations) {
 
   helpNowDeepDiveBySituation[s.id] = dive;
   newHelpNowDeepDiveBySituation[s.id] = dive;
+}
