@@ -2992,7 +2992,7 @@ default:
 
     // Route early waking before the generic sleep branch. This covers both a
     // child waking early and a sibling waking another child early.
-    const isEarlyWake = /\b(?:woke|woken|wake)\s+(?:up\s+)?(?:way\s+)?too\s+early\b|\b(?:toddler|child)\s+woke(?:\s+\w+){0,4}\s+early\b/.test(lower);
+    const isEarlyWake = /\b(?:woke|woken|wake)\s+(?:up\s+)?(?:way\s+)?too\s+early\b|\b(?:toddler|child)\s+woke(?:\s+\w+){0,4}\s+early\b|\b(?:is|gets?)\s+up\s+(?:way\s+)?too\s+early\b|\bwakes?\s+at\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?)?\b/.test(lower);
     if (isEarlyWake) {
       const situationId = /crying|screaming/.test(lower)
         ? 'early-wake-crying'
@@ -3004,6 +3004,26 @@ default:
       if (guidance) {
         return { guidance, deepDive: allDeepDiveBySituation[situationId] ?? [] };
       }
+    }
+
+    // Prefer the existing, detailed Help Now cards for common wording before
+    // the broad problem matcher falls back to generic guidance.
+    const specificSituationId =
+      /screen\s*(?:time)?\s*(?:is\s*)?(?:over|done|finished)|(?:turn(?:ed)?|shut)\s*(?:the\s*)?(?:screen|tv|tablet).*(?:scream|cry|meltdown|tantrum)/.test(lower)
+        ? 'screen-now'
+        : /\b(?:won.?t|will not|refus\w* to)\s+nap\b|\bnap\s+(?:fight|battle|refusal)/.test(lower)
+        ? 'nap-now'
+        : /\b(?:gets?|getting|keeps?)\s+out\s+of\s+bed\b/.test(lower)
+        ? 'sleep-now'
+        : /\b(?:scared|afraid|fearful)\b.*\b(?:bed|bedtime|sleep)\b/.test(lower)
+        ? 'sleep-now'
+        : /\b(?:won.?t|will not|refus\w* to)\s+(?:get\s+)?dressed\b|\b(?:get|getting)\s+dressed\b/.test(lower)
+        ? 'dressed-now'
+        : null;
+    if (specificSituationId) {
+      const situation = allHelpNowSituations.find(item => item.id === specificSituationId);
+      const guidance = situation?.guidance[stage];
+      if (guidance) return { guidance, deepDive: allDeepDiveBySituation[specificSituationId] ?? [] };
     }
 
     // COMBINATION: meltdown + need to cook/make dinner
@@ -9355,7 +9375,7 @@ const getDayLabel = (offset: number): string => {
             <div className="story-main">
               <img
                 className="story-founder-photo"
-                src="/images/ChatGPT_Image_Aug_31,_2026,_08_32_44_AM.png"
+                src="/images/founder.png"
                 alt="Breezier Days founder holding a piglet"
               />
               <div className="story-content">
