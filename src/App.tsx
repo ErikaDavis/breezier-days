@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import { useCloudSync } from './useCloudSync';
-import { checkPremiumStatus, createCheckoutSession, createPortalSession } from './supabaseClient';
+import { checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, signInToPremium, type PremiumUser } from './supabaseClient';
 import { developmentTopics, getDevelopmentTopic, detectDevelopmentTopic, type DevelopmentGuidance } from './developmentData';
 import {
   learningActivities, learningCategories, learningAgeGroups,
@@ -1983,15 +1983,20 @@ function App() {
   const [openedSavedDayPlan, setOpenedSavedDayPlan] = useState<SavedDayPlan | null>(null);
   const [refineContext, setRefineContext] = useState<RefineContextId | null>(null);
   const [refinedResult, setRefinedResult] = useState<Guidance | null>(null);
-  const [isPremium, setIsPremium] = useState<boolean>(() => {
-    try { return window.localStorage.getItem('littlewise-premium') === 'true'; } catch { return false; }
-  });
+  // Entitlements are server-authoritative; browser storage never grants Premium.
+  const [isPremium, setIsPremium] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumModalFeature, setPremiumModalFeature] = useState<PremiumFeatureId | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [premiumRecoveryCode, setPremiumRecoveryCode] = useState('');
-  const [showPremiumRecovery, setShowPremiumRecovery] = useState(false);
+  const [premiumUser, setPremiumUser] = useState<PremiumUser | null>(null);
+  const premiumUserIdRef = useRef<string | undefined>(premiumUser?.id);
+  premiumUserIdRef.current = premiumUser?.id;
+  const [premiumAuthReady, setPremiumAuthReady] = useState(false);
+  const [premiumAuthMode, setPremiumAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  const [premiumAuthEmail, setPremiumAuthEmail] = useState('');
+  const [premiumAuthPassword, setPremiumAuthPassword] = useState('');
+  const [premiumAuthMessage, setPremiumAuthMessage] = useState<string | null>(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showPremiumSuccess, setShowPremiumSuccess] = useState(false);
   const [premiumKitchenInput, setPremiumKitchenInput] = useState('');
@@ -2015,9 +2020,7 @@ function App() {
   const [premiumChecking, setPremiumChecking] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
-  const [premiumUntil, setPremiumUntil] = useState<string | null>(() => {
-    try { return window.localStorage.getItem('littlewise-premium-until'); } catch { return null; }
-  });
+  const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [personalizedHelpUsage, setPersonalizedHelpUsage] = useState<number>(() => {
     try {
       const monthKey = new Date().toISOString().slice(0, 7);
@@ -2031,8 +2034,6 @@ function App() {
       return Number.isFinite(storedCount) ? Math.max(0, storedCount) : 0;
     } catch { return 0; }
   });
-  const [devMode, setDevMode] = useState(false);
-  const footerClickRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null });
 
   type DayMood = 'good' | 'help' | '';
   const [dayMood, setDayMood] = useState<DayMood>(() => {
@@ -2265,17 +2266,6 @@ function App() {
     return msg;
   });
 
-  const handleFooterSecretClick = () => {
-    const ref = footerClickRef.current;
-    ref.count += 1;
-    if (ref.timer) clearTimeout(ref.timer);
-    ref.timer = setTimeout(() => { ref.count = 0; }, 2500);
-    if (ref.count >= 5) {
-      ref.count = 0;
-      setDevMode(d => !d);
-    }
-  };
-
   type NavSnapshot = {
     activeNav: 'home' | 'help' | 'explore' | 'saved';
     selectedHelp: string;
@@ -2384,37 +2374,47 @@ function App() {
     }
   }, [showPremiumModal, legalPage]);
 
-  const premiumIdentity = syncPasscode ?? identity;
+  useEffect(() => {
+    let active = true;
+    let authEventReceived = false;
+    void getPremiumUser().then(user => {
+      if (active && !authEventReceived) { setPremiumUser(user); setPremiumAuthReady(true); }
+    }).catch(() => { if (active) setPremiumAuthReady(true); });
+    const unsubscribe = onPremiumAuthChange(user => {
+      authEventReceived = true;
+      if (active) { setPremiumUser(user); setPremiumAuthReady(true); }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, []);
 
   useEffect(() => {
-    if (!premiumIdentity) return;
-    try { if (window.localStorage.getItem('littlewise-premium') === 'true') setIsPremium(true); } catch {}
-    const migrateFrom = syncPasscode && syncPasscode !== identity ? identity : undefined;
-    void refreshPremiumFromServer(premiumIdentity, migrateFrom);
-  }, [premiumIdentity, syncPasscode, identity]);
+    applyPremiumStatus(false);
+    if (premiumUser) void refreshPremiumFromServer();
+  }, [premiumUser?.id]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('premium') === 'success') {
-      window.history.replaceState({}, '', window.location.pathname);
-      setShowPremiumSuccess(true);
-      if (premiumIdentity) {
+      // Keep the return marker until verification completes. Auth restoration
+      // and React StrictMode can both rerun this effect before polling starts.
+      if (!premiumAuthReady) return;
+      if (premiumUser) {
         setPremiumChecking(true);
+        setShowPremiumSuccess(true);
         let cancelled = false;
         let attempts = 0;
         const poll = async () => {
           if (cancelled) return;
           attempts += 1;
-          const { isPremium: remote, currentPeriodEnd, cancelAtPeriodEnd: cancelFlag } = await checkPremiumStatus(premiumIdentity);
+          // A redirect proves nothing. Only the webhook-written entitlement can
+          // activate Premium, so this poll reads the authenticated backend status.
+          const result = await checkPremiumStatus();
+          const { isPremium: remote, currentPeriodEnd, cancelAtPeriodEnd: cancelFlag } = result;
           if (cancelled) return;
           if (remote) {
-            setIsPremium(true);
-            window.localStorage.setItem('littlewise-premium', 'true');
-            setCancelAtPeriodEnd(cancelFlag);
-            if (currentPeriodEnd) {
-              window.localStorage.setItem('littlewise-premium-until', currentPeriodEnd);
-              setPremiumUntil(currentPeriodEnd);
-            }
+            applyPremiumStatus(remote, currentPeriodEnd, cancelFlag);
+            params.delete('premium');
+            window.history.replaceState({}, '', window.location.pathname + (params.size ? `?${params}` : '') + window.location.hash);
             setPremiumChecking(false);
             return;
           }
@@ -2422,34 +2422,34 @@ function App() {
             setTimeout(poll, attempts < 3 ? 1500 : 3000);
           } else {
             setPremiumChecking(false);
+            setCheckoutError(result.error || 'Your payment is still being verified. Use Restore Purchases to check again; you do not need to pay again.');
           }
         };
         setTimeout(poll, 1000);
         return () => { cancelled = true; };
+      } else {
+        setShowPremiumModal(true);
+        setPremiumAuthMessage('Sign in to the account you used at checkout to verify Premium.');
       }
     } else if (params.get('premium') === 'cancelled') {
       window.history.replaceState({}, '', window.location.pathname);
       setCheckoutError('Checkout was cancelled. Your subscription was not started.');
     }
-  }, [premiumIdentity, identity]);
+  }, [premiumAuthReady, premiumUser?.id]);
 
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return;
-      if (!premiumIdentity) return;
-      checkPremiumStatus(premiumIdentity).then(({ isPremium: remote, currentPeriodEnd, cancelAtPeriodEnd: cancelFlag }) => {
-        setIsPremium(prev => {
-          if (remote !== prev) {
-            window.localStorage.setItem('littlewise-premium', remote ? 'true' : 'false');
-          }
-          return remote;
-        });
+      if (!premiumUser) return;
+      checkPremiumStatus().then(({ isPremium: remote, currentPeriodEnd, cancelAtPeriodEnd: cancelFlag, error }) => {
+        if (premiumUserIdRef.current !== premiumUser.id) return;
+        // A failed request is not an authoritative loss of entitlement.
+        if (error) return;
+        setIsPremium(remote);
         setCancelAtPeriodEnd(cancelFlag);
         if (currentPeriodEnd) {
-          window.localStorage.setItem('littlewise-premium-until', currentPeriodEnd);
           setPremiumUntil(currentPeriodEnd);
         } else {
-          window.localStorage.removeItem('littlewise-premium-until');
           setPremiumUntil(null);
         }
         if (remote && !isPremium) {
@@ -2461,7 +2461,7 @@ function App() {
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [premiumIdentity, isPremium]);
+  }, [premiumUser?.id, isPremium]);
 
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number; description: string; locationName: string } | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -3677,7 +3677,6 @@ default:
       const next = remoteData.savedLearningPlans as LearningPlan[];
       setSavedLearningPlans(prev => getRemoteDataSignature(prev) === getRemoteDataSignature(next) ? prev : next);
     }
-    if (typeof remoteData.isPremium === 'boolean') setIsPremium(prev => prev === remoteData.isPremium ? prev : remoteData.isPremium as boolean);
     if (typeof remoteData.personalizedHelpUsage === 'number') setPersonalizedHelpUsage(prev => Math.max(prev, remoteData.personalizedHelpUsage as number));
     if (typeof remoteData.selectedChildForHelp === 'number') setSelectedChildForHelp(prev => prev === remoteData.selectedChildForHelp ? prev : remoteData.selectedChildForHelp as number);
 
@@ -3759,13 +3758,6 @@ default:
 
   useEffect(() => {
     try {
-      window.localStorage.setItem('littlewise-premium', isPremium ? 'true' : 'false');
-    } catch {}
-    schedulePush();
-  }, [isPremium]);
-
-  useEffect(() => {
-    try {
       window.localStorage.setItem('breezier-days-personalized-help-month', new Date().toISOString().slice(0, 7));
       window.localStorage.setItem('breezier-days-personalized-help-usage', String(personalizedHelpUsage));
     } catch {}
@@ -3823,42 +3815,28 @@ default:
 
   const applyPremiumStatus = (remote: boolean, currentPeriodEnd?: string | null, cancelAtPeriodEnd?: boolean) => {
     setIsPremium(remote);
-    try {
-      window.localStorage.setItem('littlewise-premium', remote ? 'true' : 'false');
-      if (currentPeriodEnd) window.localStorage.setItem('littlewise-premium-until', currentPeriodEnd);
-      else if (!remote) window.localStorage.removeItem('littlewise-premium-until');
-    } catch {}
     setCancelAtPeriodEnd(Boolean(cancelAtPeriodEnd));
     setPremiumUntil(currentPeriodEnd ?? null);
   };
 
-  const refreshPremiumFromServer = async (lookupIdentity: string | null | undefined, migrateFrom?: string) => {
-    if (!lookupIdentity) return { ok: false, isPremium: false };
+  const refreshPremiumFromServer = async () => {
+    if (!premiumUser) return { ok: false, isPremium: false };
     try {
-      const result = await checkPremiumStatus(lookupIdentity, migrateFrom);
+      const result = await checkPremiumStatus();
+      if (premiumUserIdRef.current !== premiumUser.id) return { ok: false, isPremium: false };
       if (result.error) return { ok: false, isPremium: false };
       applyPremiumStatus(result.isPremium, result.currentPeriodEnd, result.cancelAtPeriodEnd);
       return { ok: true, isPremium: result.isPremium };
     } catch { return { ok: false, isPremium: false }; }
   };
 
-  const restorePurchases = async (recoveryIdentity?: string) => {
+  const restorePurchases = async () => {
     setCheckoutLoading(true);
     setCheckoutError(null);
     try {
-      const lookupIdentity = (recoveryIdentity || premiumRecoveryCode || syncPasscode || premiumIdentity || '').trim();
-      if (!lookupIdentity) {
-        setCheckoutLoading(false);
-        setShowPremiumRecovery(true);
-        return;
-      }
-      const targetIdentity = premiumIdentity || lookupIdentity;
-      const migrateFrom = lookupIdentity !== targetIdentity ? lookupIdentity : undefined;
-      const result = await refreshPremiumFromServer(targetIdentity, migrateFrom);
+      const result = await refreshPremiumFromServer();
       setCheckoutLoading(false);
       if (result.ok && result.isPremium) {
-        setPremiumRecoveryCode('');
-        setShowPremiumRecovery(false);
         setShowPremiumSuccess(true);
         return;
       }
@@ -3866,8 +3844,7 @@ default:
         setCheckoutError('We could not verify your Premium subscription right now. Please check your connection and try again.');
         return;
       }
-      setShowPremiumRecovery(true);
-      setCheckoutError('We could not find an active Premium subscription with that recovery code.');
+      setCheckoutError('No active Premium subscription was found for this account. Sign in with the email address you used when subscribing.');
     } catch {
       setCheckoutLoading(false);
       setCheckoutError('Something went wrong. Please check your internet connection and try again.');
@@ -3878,7 +3855,7 @@ default:
     setCheckoutLoading(true);
     setCheckoutError(null);
     try {
-      const { url, error } = await createCheckoutSession(premiumIdentity, window.location.origin);
+      const { url, error } = await createCheckoutSession();
       setCheckoutLoading(false);
       if (error) {
         setCheckoutError(error);
@@ -3904,7 +3881,7 @@ default:
     setCheckoutLoading(true);
     setCheckoutError(null);
     try {
-      const { url, error } = await createPortalSession(premiumIdentity, window.location.origin);
+      const { url, error } = await createPortalSession();
       setCheckoutLoading(false);
       if (error) {
         setCheckoutError(error);
@@ -3932,11 +3909,33 @@ default:
   };
 
   const refreshPremiumStatus = async () => {
-    if (!premiumIdentity) return;
-    const cached = (() => { try { return window.localStorage.getItem('littlewise-premium') === 'true'; } catch { return false; } })();
-    if (cached) setIsPremium(true);
-    const migrateFrom = syncPasscode && syncPasscode !== identity ? identity : undefined;
-    await refreshPremiumFromServer(premiumIdentity, migrateFrom);
+    await refreshPremiumFromServer();
+  };
+
+  const submitPremiumAuth = async () => {
+    const email = premiumAuthEmail.trim();
+    if (!email || !premiumAuthPassword) {
+      setPremiumAuthMessage('Enter your email address and password.');
+      return;
+    }
+    setCheckoutLoading(true);
+    setPremiumAuthMessage(null);
+    const result = premiumAuthMode === 'sign-in'
+      ? await signInToPremium(email, premiumAuthPassword)
+      : await createPremiumAccount(email, premiumAuthPassword);
+    setCheckoutLoading(false);
+    if (result.error) { setPremiumAuthMessage(result.error); return; }
+    if ('confirmationRequired' in result && result.confirmationRequired) {
+      setPremiumAuthMode('sign-in');
+      setPremiumAuthPassword('');
+      setPremiumAuthMessage('Check your email and confirm your account, then sign in here.');
+      return;
+    }
+    if (result.user) {
+      setPremiumUser(result.user);
+      setPremiumAuthPassword('');
+      setPremiumAuthMessage(null);
+    }
   };
 
   const isFeatureLocked = (featureId: PremiumFeatureId): boolean => {
@@ -5546,7 +5545,27 @@ const getDayLabel = (offset: number): string => {
               </div>
 
               <div className="premium-cta-area">
-                {isPremium && !premiumModalFeature ? (
+                {!premiumAuthReady ? (
+                  <p style={{ color: '#68716a' }}>Checking your Premium account…</p>
+                ) : !premiumUser ? (
+                  <div style={{ padding: 16, borderRadius: 16, background: '#f7f3ec', textAlign: 'left' }}>
+                    <strong style={{ color: '#26342c' }}>Create an account or sign in to continue</strong>
+                    <p style={{ margin: '7px 0 12px', color: '#68716a', fontSize: 13, lineHeight: 1.5 }}>
+                      Premium is connected to your email account, so you can restore it securely on any device.
+                    </p>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Email address</label>
+                    <input type="email" autoComplete="email" value={premiumAuthEmail} onChange={e => setPremiumAuthEmail(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', borderRadius: 10, border: '1px solid rgba(73,100,85,.18)', marginBottom: 9 }} />
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Password</label>
+                    <input type="password" autoComplete={premiumAuthMode === 'sign-in' ? 'current-password' : 'new-password'} value={premiumAuthPassword} onChange={e => setPremiumAuthPassword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void submitPremiumAuth(); }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', borderRadius: 10, border: '1px solid rgba(73,100,85,.18)' }} />
+                    <button type="button" className="premium-activate-button" onClick={() => void submitPremiumAuth()} disabled={checkoutLoading} style={{ width: '100%', marginTop: 12 }}>
+                      {checkoutLoading ? 'Please wait…' : premiumAuthMode === 'sign-in' ? 'Sign in to Premium' : 'Create Premium account'}
+                    </button>
+                    {premiumAuthMessage && <p style={{ color: '#c0392b', fontSize: 13, margin: '9px 0 0', fontWeight: 600 }}>{premiumAuthMessage}</p>}
+                    <button type="button" className="premium-maybe-later" onClick={() => { setPremiumAuthMode(mode => mode === 'sign-in' ? 'sign-up' : 'sign-in'); setPremiumAuthMessage(null); }}>
+                      {premiumAuthMode === 'sign-in' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+                    </button>
+                  </div>
+                ) : isPremium && !premiumModalFeature ? (
                   <div className="premium-member-panel">
                     <div className="premium-member-icon">✓</div>
                     <div className="premium-member-copy">
@@ -5693,26 +5712,13 @@ const getDayLabel = (offset: number): string => {
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 14, background: '#f7f3ec', textAlign: 'left' }}>
                       <strong style={{ display: 'block', marginBottom: 6, color: '#26342c' }}>Already have Premium?</strong>
                       <p style={{ margin: '0 0 9px', color: '#68716a', fontSize: 12, lineHeight: 1.5 }}>
-                        Moving to a new phone, tablet, or browser? You do not need to subscribe again.
-                        Open Breezier Days in the same browser where Premium is active, go to <strong>Sync Devices</strong>,
-                        and follow the steps to connect your new device.
-                      </p>
-                      <p style={{ margin: 0, color: '#68716a', fontSize: 12, lineHeight: 1.5 }}>
-                        If that does not work, try <strong>Restore Purchases</strong> below.
+                        Sign in with the email address you used to subscribe. Your Premium status is then restored from your secure account.
                       </p>
                     </div>
 
                     <button type="button" className="premium-maybe-later" onClick={restorePurchases} disabled={checkoutLoading} style={{ marginTop: 8 }}>
                       {checkoutLoading ? 'Checking…' : 'Restore Purchases'}
                     </button>
-                    {showPremiumRecovery && !isPremium && (
-                      <div style={{ marginTop: 12, padding: 14, borderRadius: 14, background: '#f7f3ec', textAlign: 'left' }}>
-                        <strong style={{ display: 'block', marginBottom: 6, color: '#26342c' }}>Restoring after a reinstall?</strong>
-                        <p style={{ margin: '0 0 9px', color: '#68716a', fontSize: 12, lineHeight: 1.5 }}>If Premium is active in another browser, open Breezier Days there first and use Sync Devices to connect this device. Or enter your Breezier Days sync/recovery code from before the reinstall below.</p>
-                        <input value={premiumRecoveryCode} onChange={e => setPremiumRecoveryCode(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && premiumRecoveryCode.trim()) void restorePurchases(premiumRecoveryCode.trim()); }} placeholder="Enter your sync/recovery code" autoComplete="off" style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', borderRadius: 10, border: '1px solid rgba(73,100,85,.18)', marginBottom: 8 }} />
-                        <button type="button" className="premium-activate-button" onClick={() => void restorePurchases(premiumRecoveryCode.trim())} disabled={checkoutLoading || !premiumRecoveryCode.trim()} style={{ width: '100%' }}>{checkoutLoading ? 'Restoring…' : 'Restore Premium'}</button>
-                      </div>
-                    )}
                     <button type="button" className="premium-maybe-later" onClick={() => setShowPremiumModal(false)}>
                       Maybe later
                     </button>
@@ -5940,7 +5946,7 @@ const getDayLabel = (offset: number): string => {
             <div className="legal-modal-body" style={{ textAlign: 'center', padding: '40px 24px' }}>
               <div style={{ fontSize: 56, marginBottom: 16 }}>✓</div>
               <h2 style={{ fontSize: 24, fontWeight: 800, color: 'var(--navy)', margin: '0 0 12px' }}>
-                Payment Successful!
+                {premiumChecking ? 'Checking your subscription' : isPremium ? 'Premium is active' : 'Subscription status'}
               </h2>
               {premiumChecking ? (
                 <>
@@ -13689,7 +13695,7 @@ const getDayLabel = (offset: number): string => {
         )}
 
         <footer>
-          <p onClick={handleFooterSecretClick} style={{ cursor: 'pointer', userSelect: 'none', padding: '12px 0' }}>Made for real life — for parents, nannies, grandparents, and caregivers.</p>
+          <p style={{ padding: '12px 0' }}>Made for real life — for parents, nannies, grandparents, and caregivers.</p>
 
           <div className="legal-links">
             <button type="button" onClick={() => { pushNavHistory(); setLegalPage('privacy') }}>Privacy Policy</button>
@@ -13749,46 +13755,6 @@ const getDayLabel = (offset: number): string => {
             )}
           </div>
 
-          {devMode && (
-            <div className="dev-panel">
-              <div className="dev-panel-header">
-                <strong>Developer Mode</strong>
-                <button type="button" className="dev-close" onClick={() => setDevMode(false)}>×</button>
-              </div>
-              <div className="dev-panel-body">
-                <div className="dev-panel-row">
-                  <span>Premium: {isPremium ? 'ON' : 'OFF'}</span>
-                  <button type="button" className="dev-toggle-btn" onClick={() => setIsPremium(p => !p)}>
-                    Toggle Premium
-                  </button>
-                </div>
-                <div className="dev-panel-row">
-                  <span>Personalized help: {personalizedHelpUsage}/{FREE_PERSONALIZED_HELP_LIMIT} this month</span>
-                  <button type="button" className="dev-toggle-btn" onClick={() => setPersonalizedHelpUsage(0)}>
-                    Reset Usage
-                  </button>
-                </div>
-                <div className="dev-panel-row">
-                  <span>Saved ideas: {savedIdeas.length}/{FREE_SAVED_IDEA_LIMIT}</span>
-                  <button type="button" className="dev-toggle-btn" onClick={() => setSavedIdeas([])}>
-                    Clear Saved
-                  </button>
-                </div>
-                <div className="dev-panel-row">
-                  <span>Simulate: cancel at period end</span>
-                  <button type="button" className="dev-toggle-btn" onClick={() => { setCancelAtPeriodEnd(true); setPremiumUntil(new Date(Date.now() + 5 * 60 * 1000).toISOString()); window.localStorage.setItem('littlewise-premium-until', new Date(Date.now() + 5 * 60 * 1000).toISOString()); }}>
-                    Simulate Canceled
-                  </button>
-                </div>
-                <div className="dev-panel-row">
-                  <span>Simulate: subscription ended</span>
-                  <button type="button" className="dev-toggle-btn" onClick={() => { setIsPremium(false); setCancelAtPeriodEnd(false); setPremiumUntil(null); window.localStorage.setItem('littlewise-premium', 'false'); window.localStorage.removeItem('littlewise-premium-until'); }}>
-                    Simulate Ended
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 </footer>
       </section>
 
