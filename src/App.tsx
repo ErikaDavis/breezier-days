@@ -1952,6 +1952,7 @@ function App() {
   const helpNowRef = useRef<HTMLElement | null>(null);
   const activityRef = useRef<HTMLElement | null>(null);
   const justTellMeRef = useRef<HTMLElement | null>(null);
+  const helpJustTellMeRef = useRef<HTMLDivElement | null>(null);
   const helpSectionRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
   const planMyDayRef = useRef<HTMLDivElement | null>(null);
@@ -2001,6 +2002,7 @@ function App() {
   const [premiumAuthMessage, setPremiumAuthMessage] = useState<string | null>(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showPremiumSuccess, setShowPremiumSuccess] = useState(false);
+  const [justTellMeEntry, setJustTellMeEntry] = useState<'home' | 'help'>('home');
   const [premiumKitchenInput, setPremiumKitchenInput] = useState('');
   const [premiumKitchenIdeas, setPremiumKitchenIdeas] = useState<string[]>([]);
   const [premiumMealIdeas, setPremiumMealIdeas] = useState<MealIdea[]>([]);
@@ -2424,6 +2426,7 @@ function App() {
       if (!premiumAuthReady) return;
       if (premiumUser) {
         setPremiumChecking(true);
+        setShowPremiumModal(false);
         setShowPremiumSuccess(true);
         let cancelled = false;
         let attempts = 0;
@@ -2477,6 +2480,7 @@ function App() {
           setPremiumUntil(null);
         }
         if (remote && !isPremium) {
+          setShowPremiumModal(false);
           setShowPremiumSuccess(true);
         }
       }).catch(() => {
@@ -3334,10 +3338,11 @@ default:
     };
   };
 
-  const handleJustTellMe = () => {
+  const handleJustTellMe = (entry: 'home' | 'help' = 'home') => {
     const text = justTellMeText.trim();
     if (!text) return;
     if (!tryUsePersonalizedHelp()) return;
+    setJustTellMeEntry(entry);
     const lower = text.toLowerCase();
     // Specific immediate-help requests take precedence over the broader
     // development-topic cards, so the answer stays next-step focused.
@@ -3352,7 +3357,7 @@ default:
         setJustTellMeDeepDive([]);
         setJustTellMeDevResult(devGuidance);
         window.setTimeout(() => {
-          justTellMeRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+          (entry === 'help' ? helpJustTellMeRef.current : justTellMeRef.current)?.scrollIntoView({ behavior: 'auto', block: 'start' });
         }, 50);
         return;
       }
@@ -3365,7 +3370,7 @@ default:
     setJustTellMeDeepDive(deepDive);
     setJustTellMeDevResult(null);
     window.setTimeout(() => {
-      justTellMeRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+      (entry === 'help' ? helpJustTellMeRef.current : justTellMeRef.current)?.scrollIntoView({ behavior: 'auto', block: 'start' });
     }, 50);
   };
 
@@ -3863,6 +3868,8 @@ default:
   }, [selectedChildForHelp, children]);
 
   const unlockPremium = (_featureId?: PremiumFeatureId) => {
+    setShowCheckoutConfirm(false);
+    setShowPremiumSuccess(false);
     setPremiumModalFeature(_featureId ?? null);
     setShowPremiumModal(true);
   };
@@ -3870,7 +3877,15 @@ default:
   const activatePremium = async () => {
     setCheckoutError(null);
     setTermsAccepted(false);
+    setShowPremiumModal(false);
+    setShowPremiumSuccess(false);
     setShowCheckoutConfirm(true);
+  };
+
+  const showPremiumSuccessDialog = () => {
+    setShowPremiumModal(false);
+    setShowCheckoutConfirm(false);
+    setShowPremiumSuccess(true);
   };
 
   const applyPremiumStatus = (remote: boolean, currentPeriodEnd?: string | null, cancelAtPeriodEnd?: boolean) => {
@@ -3897,7 +3912,7 @@ default:
       const result = await refreshPremiumFromServer();
       setCheckoutLoading(false);
       if (result.ok && result.isPremium) {
-        setShowPremiumSuccess(true);
+        showPremiumSuccessDialog();
         return;
       }
       if (!result.ok) {
@@ -4770,8 +4785,27 @@ const getDayLabel = (offset: number): string => {
     };
     const situationId = situationMap[takingOverSituation] || 'next-hour';
     const situation = allHelpNowSituations.find(s => s.id === situationId);
-    const guidance = situation?.guidance?.[ageId];
-    if (!guidance) { setTakingOverPlan(null); return; }
+    const fallbackPrompt: Record<string, string> = {
+      bored: 'my child is bored',
+      fighting: 'my kids are fighting',
+      meltdown: 'my child is having a meltdown',
+      'burn-energy': 'my child needs to burn energy',
+      quiet: 'my child needs a quiet activity',
+      lunch: 'it is lunchtime and my child needs lunch',
+      snack: 'my child needs a snack',
+      bedtime: 'bedtime is falling apart',
+      leaving: 'we need to leave and my child will not cooperate',
+      'baby-crying': 'my baby is crying',
+      'wont-listen': 'my child will not listen',
+      independent: 'I need something my child can do independently',
+      'one-on-one': 'I want one-on-one time with my child',
+      'just-a-plan': 'I need a simple plan for the next hour',
+    };
+    // Some Taking Over choice IDs are presentation IDs rather than Help Now
+    // card IDs. Fall back through the same text router so every choice yields
+    // a practical plan instead of leaving the modal unchanged.
+    const guidance = situation?.guidance?.[ageId]
+      ?? getJustTellMeGuidance(`${ageId} ${fallbackPrompt[takingOverSituation] ?? fallbackPrompt['just-a-plan']}`).guidance;
 
     const timeLabel = takingOverTime === 'all' ? 'the whole afternoon' : takingOverTime;
     const energyPrefix = takingOverEnergy === 'exhausted'
@@ -5526,12 +5560,26 @@ const getDayLabel = (offset: number): string => {
             type="button"
             className="legal-danger-button"
             onClick={() => {
-              window.localStorage.removeItem('parenting-app-children');
-              window.localStorage.removeItem('littlewise-saved-ideas');
+              [
+                'parenting-app-children', 'littlewise-saved-ideas', 'littlewise-saved-day-plans',
+                'littlewise-learning-plans', 'littlewise-day-routines', 'littlewise-handoff',
+                'littlewise-little-wins', 'littlewise-selected-child', 'littlewise-day-mood',
+                'littlewise-day-mood-date', 'littlewise-supportive-date', 'littlewise-supportive-msg',
+                'breezier-days-personalized-help-month', 'breezier-days-personalized-help-usage',
+                'breezier-days-identity', 'breezier-days-sync-passcode', 'breezier-days-remote-data',
+              ].forEach(key => window.localStorage.removeItem(key));
               setChildren([]);
               setSavedIdeas([]);
+              setSavedDayPlans([]);
+              setSavedLearningPlans([]);
+              setDayRoutines([]);
+              setLittleWins([]);
+              setHandoff(emptyHandoff);
+              setDayMood('');
+              setPersonalizedHelpUsage(0);
               setSelectedChildId(null);
               setSelectedChildForHelp(null);
+              clearSyncPasscode();
               setLegalPage(null);
             }}
           >
@@ -9851,7 +9899,7 @@ const getDayLabel = (offset: number): string => {
                   placeholder="Example: My toddler is melting down and I need to make dinner."
                   rows={3}
                 />
-                <button type="button" className="just-tell-me-cta" onClick={handleJustTellMe} disabled={!justTellMeText.trim()}>
+                <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('home')} disabled={!justTellMeText.trim()}>
                   ✨ Tell me what to do
                 </button>
               </div>
@@ -9865,7 +9913,7 @@ const getDayLabel = (offset: number): string => {
                 <button type="button" onClick={() => setJustTellMeText('My 3-year-old doesn\'t speak as clearly as other kids.')}>"Preschooler speech concern"</button>
               </div>
 
-              {justTellMeResult && (
+              {justTellMeEntry === 'home' && justTellMeResult && (
                 <section className="just-tell-me-result">
                   <p className="eyebrow">HERE'S YOUR NEXT STEP</p>
                   <div className="just-tell-me-result-title">
@@ -9954,7 +10002,7 @@ const getDayLabel = (offset: number): string => {
                 </section>
               )}
 
-              {justTellMeDevResult && (
+              {justTellMeEntry === 'home' && justTellMeDevResult && (
                 <section className="just-tell-me-result">
                   <p className="eyebrow">HERE'S YOUR DEVELOPMENT ANSWER</p>
                   <div className="just-tell-me-result-title">
@@ -12226,7 +12274,7 @@ const getDayLabel = (offset: number): string => {
               }`}
             >
               {selectedHelp === 'help-now' && (
-                <div className="help-personalized-intro" style={{ marginBottom: 26, padding: '26px 24px', borderRadius: 24, background: '#f7f3ec', border: '1px solid rgba(73,100,85,.12)' }}>
+                <div className="help-personalized-intro" ref={helpJustTellMeRef} style={{ marginBottom: 26, padding: '26px 24px', borderRadius: 24, background: '#f7f3ec', border: '1px solid rgba(73,100,85,.12)' }}>
                   <p className="eyebrow" style={{ color: '#496455', fontWeight: 800, letterSpacing: '.12em', marginBottom: 8 }}>LESS FIGURING IT OUT</p>
                   <h2 style={{ margin: '0 0 8px' }}>Just tell me what's happening.</h2>
                   <p style={{ margin: '0 0 10px', color: '#4a524a', lineHeight: 1.6 }}><strong>Free:</strong> Get 5 personalized practical answers each month. Premium makes personalized help unlimited and adds full game plans.</p>
@@ -12243,16 +12291,35 @@ const getDayLabel = (offset: number): string => {
                       value={justTellMeText}
                       onChange={(e) => setJustTellMeText(e.target.value)}
                       onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleJustTellMe();
+                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleJustTellMe('help');
                       }}
                       placeholder="Example: My toddler is melting down and I need to make dinner."
                       rows={3}
                     />
-                    <button type="button" className="just-tell-me-cta" onClick={handleJustTellMe} disabled={!justTellMeText.trim()}>
+                    <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('help')} disabled={!justTellMeText.trim()}>
                       ✨ Tell me what to do
                     </button>
                   </div>
                   <p style={{ margin: '10px 0 0', color: '#68716a', fontSize: 12 }}>One sentence is enough. No need to explain everything.</p>
+                  {justTellMeEntry === 'help' && justTellMeResult && (
+                    <section className="just-tell-me-result" style={{ marginTop: 20 }}>
+                      <p className="eyebrow">HERE'S YOUR NEXT STEP</p>
+                      <div className="just-tell-me-result-title"><span>{justTellMeResult.emoji}</span><div><h3>{justTellMeResult.title}</h3><small>Based on: {justTellMeTitle}</small></div></div>
+                      <div className="just-tell-me-result-grid">
+                        <div><strong>DO THIS NOW</strong><p>{justTellMeResult.doNow}</p></div>
+                        <div><strong>SAY THIS</strong><p>"{justTellMeResult.sayThis}"</p></div>
+                        <div><strong>AVOID THIS</strong><p>{justTellMeResult.avoidThis}</p></div>
+                        <div><strong>AFTERWARD</strong><p>{justTellMeResult.afterward}</p></div>
+                      </div>
+                    </section>
+                  )}
+                  {justTellMeEntry === 'help' && justTellMeDevResult && (
+                    <section className="just-tell-me-result" style={{ marginTop: 20 }}>
+                      <p className="eyebrow">HERE'S YOUR DEVELOPMENT ANSWER</p>
+                      <div className="just-tell-me-result-title"><span>{justTellMeDevResult.emoji}</span><div><h3>{justTellMeDevResult.title}</h3><small>Based on: {justTellMeTitle}</small></div></div>
+                      <div className="just-tell-me-result-grid"><div><strong>WHAT'S COMMON AT THIS AGE</strong><p>{justTellMeDevResult.common}</p></div></div>
+                    </section>
+                  )}
                 </div>
               )}
 
