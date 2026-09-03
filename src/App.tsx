@@ -2508,7 +2508,22 @@ function App() {
   const [takingOverTime, setTakingOverTime] = useState<string>('30 min');
   const [takingOverSituation, setTakingOverSituation] = useState<string>('');
   const [takingOverEnergy, setTakingOverEnergy] = useState<string>('');
-  const [takingOverPlan, setTakingOverPlan] = useState<null | { rightNow: string; next: string; ifNotWorking: string; keepBusy: string; nextTransition: string }>(null);
+  const [takingOverPlan, setTakingOverPlan] = useState<null | {
+    rightNow: string;
+    next: string;
+    ifNotWorking: string;
+    keepBusy: string;
+    nextTransition: string;
+    premium?: {
+      doThisFirst: string;
+      whatToSay: string;
+      next10To15: string[];
+      planB: string;
+      avoid: string;
+      laterToday: string;
+      childNote?: string;
+    };
+  }>(null);
 
   const [showLearning, setShowLearning] = useState(false);
   const [showExploreHub, setShowExploreHub] = useState(false);
@@ -4806,6 +4821,10 @@ const getDayLabel = (offset: number): string => {
     // a practical plan instead of leaving the modal unchanged.
     const guidance = situation?.guidance?.[ageId]
       ?? getJustTellMeGuidance(`${ageId} ${fallbackPrompt[takingOverSituation] ?? fallbackPrompt['just-a-plan']}`).guidance;
+    const child = selectedHelpChild;
+    const personalizedGuidance = isPremium
+      ? personalizeGuidance(guidance, child?.traits ?? [])
+      : guidance;
 
     const timeLabel = takingOverTime === 'all' ? 'the whole afternoon' : takingOverTime;
     const energyPrefix = takingOverEnergy === 'exhausted'
@@ -4815,11 +4834,28 @@ const getDayLabel = (offset: number): string => {
       : 'You have energy. Make the most of it. ';
 
     setTakingOverPlan({
-      rightNow: `${energyPrefix}${guidance.doNow}`,
-      next: guidance.thenTry || guidance.afterward || 'Follow the family routine and keep the next transition in mind.',
-      ifNotWorking: guidance.ifNotWorking || 'If things are not working, check hunger, tiredness, or overstimulation. A snack, a change of scenery, or a quiet break can help.',
-      keepBusy: guidance.keepBusy || 'Set up a simple activity station with a few safe toys or materials within view.',
+      rightNow: `${energyPrefix}${personalizedGuidance.doNow}`,
+      next: personalizedGuidance.thenTry || personalizedGuidance.afterward || 'Follow the family routine and keep the next transition in mind.',
+      ifNotWorking: personalizedGuidance.ifNotWorking || 'If things are not working, check hunger, tiredness, or overstimulation. A snack, a change of scenery, or a quiet break can help.',
+      keepBusy: personalizedGuidance.keepBusy || 'Set up a simple activity station with a few safe toys or materials within view.',
       nextTransition: `Plan for ${timeLabel}. Watch for the next natural transition: meal, nap, rest, or leaving. Give a 5-minute warning before any change.`,
+      ...(isPremium ? {
+        premium: {
+          doThisFirst: `${energyPrefix}${personalizedGuidance.doNow}`,
+          whatToSay: personalizedGuidance.sayThis,
+          next10To15: [
+            personalizedGuidance.thenTry || 'Stay close and keep the next step small. Use one calm direction at a time.',
+            personalizedGuidance.keepBusy || 'Offer one simple, safe activity or job that fits this moment.',
+            'Use this sequence for the next 10–15 minutes, then move to the next routine step.',
+          ],
+          planB: personalizedGuidance.ifNotWorking || 'Pause and check for hunger, tiredness, pain, or too much stimulation. Reduce the demand, change the setting, or take a short quiet reset before trying again.',
+          avoid: personalizedGuidance.avoidThis,
+          laterToday: personalizedGuidance.afterward,
+          childNote: child
+            ? `Personalized for ${child.name}${child.traits?.length ? ` · ${child.traits.join(', ')}` : ''}`
+            : undefined,
+        },
+      } : {}),
     });
   };
 
@@ -9594,13 +9630,21 @@ const getDayLabel = (offset: number): string => {
 
               {takingOverPlan && (
                 <div className="taking-over-result">
-                  <div className="taking-over-step"><div className="taking-over-step-label">RIGHT NOW</div><p>{takingOverPlan.rightNow}</p></div>
-                  <div className="taking-over-step"><div className="taking-over-step-label">NEXT</div><p>{takingOverPlan.next}</p></div>
-                  {isPremium && (
+                  {isPremium && takingOverPlan.premium ? (
                     <>
-                      <div className="taking-over-step"><div className="taking-over-step-label">IF THAT DOESN'T WORK</div><p>{takingOverPlan.ifNotWorking}</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">KEEP THEM BUSY</div><p>{takingOverPlan.keepBusy}</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">NEXT TRANSITION</div><p>{takingOverPlan.nextTransition}</p></div>
+                      <p className="eyebrow" style={{ margin: '0 0 10px', color: '#496455' }}>✦ PREMIUM CAREGIVER PLAN</p>
+                      {takingOverPlan.premium.childNote && <p style={{ margin: '0 0 14px', color: '#68716a', fontSize: 13 }}>{takingOverPlan.premium.childNote}</p>}
+                      <div className="taking-over-step"><div className="taking-over-step-label">DO THIS FIRST</div><p>{takingOverPlan.premium.doThisFirst}</p></div>
+                      <div className="taking-over-step"><div className="taking-over-step-label">WHAT TO SAY</div><p className="quote">“{takingOverPlan.premium.whatToSay}”</p></div>
+                      <div className="taking-over-step"><div className="taking-over-step-label">NEXT 10–15 MINUTES</div><ol style={{ margin: '0', paddingLeft: 20, color: '#68716a', lineHeight: 1.55 }}>{takingOverPlan.premium.next10To15.map((step, index) => <li key={index}>{step}</li>)}</ol></div>
+                      <div className="taking-over-step"><div className="taking-over-step-label">IF THAT DOESN'T WORK</div><p>{takingOverPlan.premium.planB}</p></div>
+                      <div className="taking-over-step"><div className="taking-over-step-label">WHAT TO AVOID RIGHT NOW</div><p>{takingOverPlan.premium.avoid}</p></div>
+                      <div className="taking-over-step"><div className="taking-over-step-label">LATER TODAY</div><p>{takingOverPlan.premium.laterToday}</p></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="taking-over-step"><div className="taking-over-step-label">RIGHT NOW</div><p>{takingOverPlan.rightNow}</p></div>
+                      <div className="taking-over-step"><div className="taking-over-step-label">NEXT</div><p>{takingOverPlan.next}</p></div>
                     </>
                   )}
                 </div>
