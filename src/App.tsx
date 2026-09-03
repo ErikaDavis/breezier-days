@@ -1927,6 +1927,8 @@ function App() {
   });
   const [savedFilter, setSavedFilter] = useState<'All' | SavedIdea['category']>('All');
   const [showChildForm, setShowChildForm] = useState(false);
+  const childFormRef = useRef<HTMLDivElement | null>(null);
+  const moodResponseRef = useRef<HTMLDivElement | null>(null);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
   const [newChildNote, setNewChildNote] = useState('');
@@ -2210,6 +2212,19 @@ function App() {
       window.localStorage.setItem('littlewise-day-mood', mood);
       window.localStorage.setItem('littlewise-day-mood-date', new Date().toDateString());
     } catch {}
+    window.requestAnimationFrame(() => {
+      moodResponseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  const openChildForm = () => {
+    setShowChildForm(true);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        childFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        childFormRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+      });
+    });
   };
 
   const littleWinPool: { text: string; emoji: string }[] = [
@@ -9565,7 +9580,7 @@ const getDayLabel = (offset: number): string => {
                     </button>
                   ))}
                 </div>
-                <button type="button" className="personalize-add-child" onClick={() => setShowChildForm(true)}>
+                <button type="button" className="personalize-add-child" onClick={openChildForm}>
                   ＋ Add another child for more personalized help
                 </button>
               </>
@@ -9595,7 +9610,7 @@ const getDayLabel = (offset: number): string => {
                     <option value="tween">🧩 Tween · 9–12 years</option>
                   </select>
                 </label>
-                <button type="button" className="personalize-add-child" onClick={() => setShowChildForm(true)}>
+                <button type="button" className="personalize-add-child" onClick={openChildForm}>
                   ＋ Add a child for more personalized help
                 </button>
               </>
@@ -9718,7 +9733,7 @@ const getDayLabel = (offset: number): string => {
           )}
 
           {dayMood === 'good' && (
-            <div className="mood-response-card" role="status" aria-live="polite">
+            <div className="mood-response-card" ref={moodResponseRef} role="status" aria-live="polite">
               <div className="mood-response-copy">
                 <strong>Nice. You don't need to turn a good day into a project.</strong>
                 <p>What would make the next part of today a little easier?</p>
@@ -10374,9 +10389,9 @@ const getDayLabel = (offset: number): string => {
           })()}
 
           {!showChildForm ? (
-            <button type="button" className="add-child" onClick={() => setShowChildForm(true)}>＋ Add child</button>
+            <button type="button" className="add-child" onClick={openChildForm}>＋ Add child</button>
           ) : (
-            <div className="child-form">
+            <div className="child-form" ref={childFormRef}>
               <input value={childName} onChange={e => setChildName(e.target.value)} placeholder="Child's name" />
               <select value={childAge} onChange={e => setChildAge(e.target.value)}>
                 <option value="">Choose age</option>
@@ -11314,7 +11329,7 @@ const getDayLabel = (offset: number): string => {
           </label>
 
           <div className="compact-person-actions">
-            <button type="button" className="personalize-add-child" onClick={() => { setShowChildForm(true); window.requestAnimationFrame(() => { const el = document.querySelector('.child-profiles'); if (el instanceof HTMLElement) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }}>
+            <button type="button" className="personalize-add-child" onClick={openChildForm}>
               ＋ Add another child for personalized help
             </button>
             <details className="pregnancy-help-note">
