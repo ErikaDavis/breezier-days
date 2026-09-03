@@ -11055,7 +11055,64 @@ const getDayLabel = (offset: number): string => {
             .stage-copy h3, .activity-card h3, .topic-heading h2 { font-size: 22px; }
             .topic-choice { min-height: 68px; padding: 12px; }
           }
-        `}</style>
+        
+          /* iPhone bottom navigation safe-area fix */
+          @media (max-width: 700px) {
+            .mobile-bottom-nav {
+              display: flex !important;
+              position: fixed !important;
+              left: 0 !important;
+              right: 0 !important;
+              bottom: 0 !important;
+              z-index: 3000 !important;
+              margin: 0 !important;
+              background: #ffffff !important;
+              border-top: 1px solid rgba(32, 52, 81, 0.10);
+              box-shadow: 0 -4px 20px rgba(32, 52, 81, 0.08);
+              padding-top: 8px !important;
+              padding-left: 6px !important;
+              padding-right: 6px !important;
+              padding-bottom: max(12px, env(safe-area-inset-bottom, 12px)) !important;
+              min-height: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+              box-sizing: border-box !important;
+              justify-content: space-around !important;
+              align-items: stretch !important;
+            }
+
+            .mobile-bottom-nav button {
+              min-height: 50px !important;
+              padding: 6px 4px !important;
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: center !important;
+              justify-content: center !important;
+              touch-action: manipulation;
+              -webkit-tap-highlight-color: transparent;
+            }
+
+            .mobile-bottom-nav .nav-icon {
+              font-size: 20px;
+              line-height: 1;
+            }
+
+            .mobile-bottom-nav .nav-label {
+              line-height: 1.2;
+            }
+
+            .app-container {
+              padding-bottom: calc(105px + env(safe-area-inset-bottom, 0px)) !important;
+            }
+          }
+
+          @supports (padding: max(0px)) {
+            @media (max-width: 700px) {
+              .mobile-bottom-nav {
+                padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+              }
+            }
+          }
+
+`}</style>
 
         <section className="premium-features-section">
           <div className="section-heading">
