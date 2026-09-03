@@ -2048,6 +2048,17 @@ function App() {
     return '';
   });
 
+  // The form is lower on the home page. Wait until React has mounted this exact
+  // form before moving focus, so the top action never looks like a no-op.
+  useEffect(() => {
+    if (!showChildForm) return;
+    const focusForm = window.requestAnimationFrame(() => {
+      childFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      childFormRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(focusForm);
+  }, [showChildForm]);
+
   type EaseNeed = 'child' | 'schedule' | 'house' | 'meals' | 'overwhelmed' | 'other' | '';
   type EaseTime = '2' | '10' | '30' | 'longer' | '';
   const [easeNeed, setEaseNeed] = useState<EaseNeed>('');
@@ -2219,12 +2230,6 @@ function App() {
 
   const openChildForm = () => {
     setShowChildForm(true);
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        childFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        childFormRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
-      });
-    });
   };
 
   const littleWinPool: { text: string; emoji: string }[] = [
@@ -2980,6 +2985,22 @@ default:
     const stageLabel: Record<AgeId, string> = {
       baby: 'baby', toddler: 'toddler', preschool: 'preschooler', bigkid: 'school-age child', tween: 'tween',
     };
+
+    // Route early waking before the generic sleep branch. This covers both a
+    // child waking early and a sibling waking another child early.
+    const isEarlyWake = /\b(?:woke|woken|wake)\s+(?:up\s+)?(?:way\s+)?too\s+early\b|\b(?:toddler|child)\s+woke(?:\s+\w+){0,4}\s+early\b/.test(lower);
+    if (isEarlyWake) {
+      const situationId = /crying|screaming/.test(lower)
+        ? 'early-wake-crying'
+        : /put.*back|back.*(?:bed|room)|return.*(?:bed|room)/.test(lower)
+        ? 'early-wake-return'
+        : 'early-wake-now';
+      const situation = allHelpNowSituations.find(item => item.id === situationId);
+      const guidance = situation?.guidance[stage];
+      if (guidance) {
+        return { guidance, deepDive: allDeepDiveBySituation[situationId] ?? [] };
+      }
+    }
 
     // COMBINATION: meltdown + need to cook/make dinner
     if (problem === 'meltdown' && (constraint === 'cook' || constraint === 'get-done')) {
