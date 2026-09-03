@@ -2048,12 +2048,11 @@ function App() {
     return '';
   });
 
-  // The form is lower on the home page. Wait until React has mounted this exact
-  // form before moving focus, so the top action never looks like a no-op.
+  // Focus only after React has mounted the existing form. Scrolling belongs to
+  // the action handler so repeated taps still navigate when the form is open.
   useEffect(() => {
     if (!showChildForm) return;
     const focusForm = window.requestAnimationFrame(() => {
-      childFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       childFormRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(focusForm);
@@ -2229,7 +2228,12 @@ function App() {
   };
 
   const openChildForm = () => {
-    setShowChildForm(true);
+    const profileSection = toolsRef.current;
+    if (profileSection) {
+      const targetY = window.scrollY + profileSection.getBoundingClientRect().top - 16;
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+    }
+    if (!showChildForm) setShowChildForm(true);
   };
 
   const littleWinPool: { text: string; emoji: string }[] = [
