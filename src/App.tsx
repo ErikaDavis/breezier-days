@@ -19,7 +19,14 @@ import {
   type HelpNowCategory,
 } from './helpNowData';
 import { buildCaregiverPlan, type CaregiverPlan, type CareEnergy } from './takingOverData';
-import { supportEmail, supportMailto } from './supportConfig';
+import { supportEmail as configuredSupportEmail, supportMailto as configuredSupportMailto } from './supportConfig';
+
+const supportEmail = configuredSupportEmail || 'breezierdayshelp@gmail.com';
+const supportMailto = (subject: string, body = '') => {
+  if (configuredSupportEmail) return configuredSupportMailto(subject, body);
+  const params = new URLSearchParams({ subject, ...(body ? { body } : {}) });
+  return `mailto:${supportEmail}?${params.toString()}`;
+};
 
 export type AgeId = 'baby' | 'toddler' | 'preschool' | 'bigkid' | 'tween';
 type ParentingStageId = 'expecting' | 'newparent' | AgeId;
