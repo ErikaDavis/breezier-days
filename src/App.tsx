@@ -7015,6 +7015,44 @@ const getDayLabel = (offset: number): string => {
         background: #fff5f7;
       }
 
+      .top-utility-strip {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin: -2px 0 18px;
+      }
+      .top-utility-card {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid rgba(73,100,85,.14);
+        background: rgba(247,243,236,.82);
+        color: #26342c;
+        border-radius: 16px;
+        padding: 11px 13px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-align: left;
+        text-decoration: none;
+        font: inherit;
+        cursor: pointer;
+        width: 100%;
+        box-sizing: border-box;
+        box-shadow: 0 4px 14px rgba(60,65,55,.035);
+        transition: transform .15s ease, background .15s ease, border-color .15s ease;
+      }
+      .top-utility-card:hover { transform: translateY(-1px); background: #f2f6f1; border-color: rgba(73,100,85,.24); }
+      .top-utility-card:focus-visible { outline: 2px solid #496455; outline-offset: 2px; }
+      .top-utility-icon { font-size: 21px; flex: 0 0 auto; }
+      .top-utility-copy { min-width: 0; }
+      .top-utility-copy strong, .top-utility-copy small { display: block; }
+      .top-utility-copy strong { font-size: 13px; line-height: 1.25; color: #3f5548; }
+      .top-utility-copy small { margin-top: 2px; color: #68716a; font-size: 10.5px; line-height: 1.3; font-weight: 600; }
+      @media (max-width: 640px) {
+        .top-utility-strip { grid-template-columns: 1fr; gap: 8px; margin: 2px 0 15px; }
+        .top-utility-card { padding: 10px 12px; border-radius: 14px; }
+      }
+
       .footer-action-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9963,6 +10001,26 @@ const getDayLabel = (offset: number): string => {
             </button>
           </div>
         </header>
+
+        <div className="top-utility-strip" aria-label="Breezier Days shortcuts">
+          {supportEmail ? (
+            <a className="top-utility-card" href={supportMailto('Breezier Days support request')}>
+              <span className="top-utility-icon">✉️</span>
+              <span className="top-utility-copy"><strong>Email Support</strong><small>Questions or having trouble? Send us an email.</small></span>
+            </a>
+          ) : (
+            <button type="button" className="top-utility-card" onClick={() => setRuntimeError('Email support is being connected. Please try again shortly.')}>
+              <span className="top-utility-icon">✉️</span>
+              <span className="top-utility-copy"><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
+            </button>
+          )}
+          {!isStandaloneApp && (
+            <button type="button" className="top-utility-card" onClick={() => void openInstallExperience()}>
+              <span className="top-utility-icon">📲</span>
+              <span className="top-utility-copy"><strong>Add Breezier Days to your Home Screen</strong><small>Keep help one tap away.</small></span>
+            </button>
+          )}
+        </div>
 
         <nav className="desktop-main-nav" aria-label="Breezier Days desktop navigation">
           <button type="button" className={activeNav === 'home' ? 'active' : ''} onClick={returnHome}>🏠 Home</button>
@@ -14567,11 +14625,16 @@ const getDayLabel = (offset: number): string => {
           <p style={{ padding: '12px 0' }}>Made for real life — for parents, nannies, grandparents, and caregivers.</p>
 
           <div className="footer-action-grid" aria-label="Breezier Days support and app shortcuts">
-            {supportEmail && (
+            {supportEmail ? (
               <a className="footer-action-card" href={supportMailto('Breezier Days support request')}>
                 <span className="footer-action-icon">✉️</span>
                 <span><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
               </a>
+            ) : (
+              <button type="button" className="footer-action-card" onClick={() => setRuntimeError('Email support is being connected. Please try again shortly.')}>
+                <span className="footer-action-icon">✉️</span>
+                <span><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
+              </button>
             )}
             <button type="button" className="footer-action-card" onClick={() => void openInstallExperience()}>
               <span className="footer-action-icon">📲</span>
