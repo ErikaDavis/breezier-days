@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import { useCloudSync } from './useCloudSync';
-import { checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, signInToPremium, type PremiumUser } from './supabaseClient';
+import { checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, requestPasswordReset, signInToPremium, updatePremiumPassword, type PremiumUser } from './supabaseClient';
 import { developmentTopics, getDevelopmentTopic, detectDevelopmentTopic, type DevelopmentGuidance } from './developmentData';
 import {
   learningActivities, learningCategories, learningAgeGroups,
@@ -18,6 +18,8 @@ import {
   newHelpNowDeepDiveBySituation,
   type HelpNowCategory,
 } from './helpNowData';
+import { buildCaregiverPlan, type CaregiverPlan, type CareEnergy } from './takingOverData';
+import { supportEmail, supportMailto } from './supportConfig';
 
 export type AgeId = 'baby' | 'toddler' | 'preschool' | 'bigkid' | 'tween';
 type ParentingStageId = 'expecting' | 'newparent' | AgeId;
@@ -1140,7 +1142,7 @@ const helpNowSituations: Situation[] = [
     guidance: {
       baby: { title: 'Baby screen transition', emoji: '👶', doNow: 'Turn the screen off and move into a simple hands-on activity.', sayThis: 'Screen is all done. Let\'s play together.', avoidThis: 'Avoid using screens as the only way to calm every difficult moment.', afterward: 'Use predictable routines around media.' },
       toddler: { title: 'Toddler screen transition', emoji: '📱', doNow: 'Give a short warning, turn it off calmly, and immediately offer the next activity.', sayThis: 'One more minute, then screen is all done. After that we will play with blocks.', avoidThis: 'Avoid reopening the negotiation after the limit.', afterward: 'Keep the media routine predictable.' },
-      preschool: { title: 'Preschool screen transition', emoji: '📱', doNow: 'Give a warning and follow through with the agreed limit.', sayThis: 'Screen time is finished. You can choose books or blocks next.', avoidThis: 'Avoid adding extra minutes because of a meltdown.', afterward: 'Praise successful transitions.' },
+      preschool: { title: 'Preschool screen transition', emoji: '📱', doNow: 'Say the final warning once, let the current moment finish if that was the agreement, then turn the screen off. Keep the device out of reach, hold the limit, and immediately offer two calm next choices such as books or blocks.', sayThis: 'Screen time is finished. You can choose books or blocks next.', avoidThis: 'Avoid adding extra minutes because of a meltdown.', afterward: 'Praise successful transitions and keep the same warning-and-finish routine next time.' },
       bigkid: { title: 'Big kid screen transition', emoji: '📱', doNow: 'Use a clear family media rule and give your child ownership of stopping at the agreed time.', sayThis: 'The limit is the limit. You can choose what you do next.', avoidThis: 'Avoid making screen limits up during the argument.', afterward: 'Create a predictable family media plan.' },
       tween: { title: 'Tween screen transition', emoji: '🧩', doNow: 'Use a family media rule your tween helped set and give them ownership of stopping at the agreed time. Explain the connection to sleep, homework, mood, and relationships.', sayThis: 'The limit is the one we agreed on. You can choose what you do next.', avoidThis: 'Avoid changing rules during the argument or shaming your tween for caring about friends and online activities.', afterward: 'Review the plan together as responsibilities and needs change.' },
     },
@@ -1273,12 +1275,62 @@ const healthCareSituations: Situation[] = [
   },
 ];
 
-const allHelpNowSituations: Situation[] = [...helpNowSituations, ...newHelpNowSituations as Situation[]];
+const helpNowAliasGuidance: Record<string, Situation['guidance'] | undefined> = {
+  'overwhelmed-now': helpNowSituations.find((item) => item.id === 'overwhelmed-now')?.guidance,
+  'meltdown-now': helpNowSituations.find((item) => item.id === 'meltdown-now')?.guidance,
+  'won-t-listen': everydaySituations.find((item) => item.id === 'listen')?.guidance,
+  'refuses-now': feelingsSituations.find((item) => item.id === 'refusing')?.guidance,
+  'fighting-now': helpNowSituations.find((item) => item.id === 'siblings-now')?.guidance,
+  'bedtime-now': helpNowSituations.find((item) => item.id === 'sleep-now')?.guidance,
+  'meal-now': helpNowSituations.find((item) => item.id === 'eat-now')?.guidance,
+  'leaving-now': everydaySituations.find((item) => item.id === 'leave')?.guidance,
+};
+
+const messNowGuidance = Object.fromEntries((['baby', 'toddler', 'preschool', 'bigkid', 'tween'] as AgeId[]).map((age) => [age, {
+  title: 'Make one small area usable', emoji: '🧺',
+  doNow: 'Choose the one area you need next—a walkway, the table, or one place to sit. Put trash in one bag, dishes by the sink, and everything else in one basket. Stop after 10 minutes or when that area works.',
+  sayThis: 'We are not cleaning everything. We are making one spot easier to use.',
+  avoidThis: 'Avoid emptying closets, sorting keepsakes, or starting several rooms at once.',
+  afterward: 'Leave the basket for later. If you have more capacity, choose one more small area; otherwise this reset is enough.',
+}])) as Situation['guidance'];
+
+const existingHelpNowIds = new Set(helpNowSituations.map((item) => item.id));
+const replacementHelpNowIds = new Set(['overwhelmed-now', 'meltdown-now']);
+const normalizedNewHelpNowSituations: Situation[] = newHelpNowSituations
+  .filter((item) => !existingHelpNowIds.has(item.id) || replacementHelpNowIds.has(item.id))
+  .map((item) => ({
+    ...item,
+    guidance: item.guidance ?? helpNowAliasGuidance[item.id] ?? (item.id === 'mess-now' ? messNowGuidance : undefined),
+  })) as Situation[];
+
+const allHelpNowSituations: Situation[] = [
+  ...helpNowSituations.filter((item) => !replacementHelpNowIds.has(item.id)),
+  ...normalizedNewHelpNowSituations,
+];
+
+const isPremiumHelpNow = (value: unknown): value is PremiumHelpNow => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<PremiumHelpNow>;
+  return typeof candidate.whyThisWorks === 'string'
+    && Array.isArray(candidate.tryNext)
+    && candidate.tryNext.every((item) => typeof item === 'string')
+    && typeof candidate.whenToReassess === 'string';
+};
+
+const validExtendedHelpNowPremium = Object.entries(extendedHelpNowPremium).reduce<Record<string, PremiumHelpNow>>(
+  (valid, [situationId, value]) => {
+    if (isPremiumHelpNow(value)) valid[situationId] = value;
+    return valid;
+  },
+  {},
+);
 
 const allPremiumHelpNowBySituation: Record<string, PremiumHelpNow> = {
   ...premiumHelpNowBySituation,
-  ...extendedHelpNowPremium,
-  ...newHelpNowPremiumBySituation,
+  ...validExtendedHelpNowPremium,
+  'fighting-now': premiumHelpNowBySituation['siblings-now'],
+  'bedtime-now': premiumHelpNowBySituation['sleep-now'],
+  'meal-now': premiumHelpNowBySituation['eat-now'],
 };
 
 const allDeepDiveBySituation: Record<string, DeepDive[]> = {
@@ -1406,6 +1458,66 @@ type ChildProfile = {
   dailyLog: DailyChildLog;
   pickyEating?: PickyEatingProfile;
 };
+
+const emptyAboutChild = (): AboutChild => ({ enjoys: '', whatWorks: '', workedBefore: '', makesHarder: '', anythingElse: '' });
+const normalizeAboutChild = (value: unknown): AboutChild => {
+  const source = value && typeof value === 'object' ? value as Partial<Record<keyof AboutChild, unknown>> : {};
+  const text = (field: keyof AboutChild) => typeof source[field] === 'string' ? source[field] : '';
+  return { enjoys: text('enjoys'), whatWorks: text('whatWorks'), workedBefore: text('workedBefore'), makesHarder: text('makesHarder'), anythingElse: text('anythingElse') };
+};
+
+const textValue = (value: unknown, fallback = ''): string => typeof value === 'string' ? value : fallback;
+const finiteNumber = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const validTemperamentTraits = new Set<TemperamentTrait>(temperamentTraits.map((trait) => trait.id));
+const normalizeDailyLog = (value: unknown): DailyChildLog => {
+  const source = value && typeof value === 'object' ? value as Partial<Record<keyof DailyChildLog, unknown>> : {};
+  return {
+    date: textValue(source.date, new Date().toISOString().slice(0, 10)),
+    wakeTime: textValue(source.wakeTime),
+    napTime: textValue(source.napTime),
+    meals: textValue(source.meals),
+    mood: textValue(source.mood),
+    potty: textValue(source.potty),
+    note: textValue(source.note),
+  };
+};
+const normalizePickyEating = (value: unknown): PickyEatingProfile => {
+  const source = value && typeof value === 'object' ? value as Partial<Record<keyof PickyEatingProfile, unknown>> : {};
+  return {
+    safeFoods: textValue(source.safeFoods),
+    learningFoods: textValue(source.learningFoods),
+    avoidTextures: textValue(source.avoidTextures),
+    mealtimeNotes: textValue(source.mealtimeNotes),
+  };
+};
+const normalizeChildProfile = (value: unknown, index: number): ChildProfile | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<Record<keyof ChildProfile, unknown>>;
+  const fallbackId = Date.now() + index;
+  const notes = Array.isArray(source.notes) ? source.notes.filter((note): note is ChildNote => Boolean(note && typeof note === 'object')) : [];
+  const reminders = Array.isArray(source.reminders) ? source.reminders.filter((item): item is ChildReminder => Boolean(item && typeof item === 'object')) : [];
+  const savedHelp = Array.isArray(source.savedHelp) ? source.savedHelp.filter((item): item is SavedHelp => Boolean(item && typeof item === 'object')) : [];
+  const development = Array.isArray(source.development) ? source.development.filter((item): item is DevelopmentActivity => Boolean(item && typeof item === 'object')) : [];
+  const traits = Array.isArray(source.traits)
+    ? source.traits.filter((trait): trait is TemperamentTrait => typeof trait === 'string' && validTemperamentTraits.has(trait as TemperamentTrait))
+    : [];
+  return {
+    id: finiteNumber(source.id, fallbackId),
+    name: textValue(source.name, 'Child'),
+    age: textValue(source.age, '3 years'),
+    notes,
+    reminders,
+    savedHelp,
+    development,
+    traits,
+    aboutChild: normalizeAboutChild(source.aboutChild),
+    dailyLog: normalizeDailyLog(source.dailyLog),
+    pickyEating: normalizePickyEating(source.pickyEating),
+  };
+};
+const normalizeChildren = (value: unknown): ChildProfile[] => Array.isArray(value)
+  ? value.map(normalizeChildProfile).filter((child): child is ChildProfile => child !== null)
+  : [];
 
 type PremiumFeatureId =
   | 'unlimited-help-now'
@@ -1746,18 +1858,30 @@ const personalizeGuidance = (guidance: Guidance, traits: TemperamentTrait[]): Gu
   if (!traits.length) return guidance;
   const has = (t: TemperamentTrait) => traits.includes(t);
   const parts: string[] = [];
+  const context = `${guidance.title} ${guidance.doNow}`.toLowerCase();
+  const isSleep = /sleep|bed|nap|night|rest time/.test(context);
+  const isMeal = /food|meal|eat|snack|dinner|lunch/.test(context);
+  const isUnsafeBehavior = /hit|kick|bite|hurt|throw|aggression|unsafe/.test(context);
 
   if (has('sensitive')) {
-    parts.push('Keep your voice low and your movements slow — too much input can overwhelm a sensitive child. Offer one calm direction at a time rather than a list.');
+    parts.push(isMeal
+      ? 'For a sensitive child, lower sensory pressure: use a small portion, reduce noise and commentary, and keep unwanted food separate when that helps.'
+      : 'Keep your voice low, movements slow, and language to one direction at a time; reducing sensory input is part of the strategy here.');
   }
   if (has('strong-willed')) {
-    parts.push('Offer two acceptable choices rather than a single instruction — a strong-willed child responds better when they feel some control.');
+    parts.push(isUnsafeBehavior
+      ? 'Keep the safety limit non-negotiable, then offer control only over the safe alternative or how they repair afterward.'
+      : 'Offer two acceptable choices inside the fixed boundary, without reopening whether the boundary will happen.');
   }
   if (has('very-active')) {
-    parts.push('Give their body something to do first — a movement step or a physical way to help channels high energy productively.');
+    parts.push(isSleep
+      ? 'For a very active child, do not restart energetic play once bedtime has begun; use slow wall pushes, carrying a pillow, or another brief quiet body job, then return directly to the same sleep cue.'
+      : isUnsafeBehavior
+      ? 'Give the body a safe physical replacement after you block the unsafe action—push a wall, stomp in place, squeeze a pillow, or throw a soft ball into a basket.'
+      : 'Give their body a brief, clearly bounded movement or helping job before asking for stillness.');
   }
   if (has('slow-to-warm-up')) {
-    parts.push('Give a slow-to-warm-up child a few moments to adjust before expecting a response. Preview what is coming next so transitions feel safe.');
+    parts.push('Keep the next step predictable and allow a short adjustment pause, but do not repeatedly change or renegotiate the plan.');
   }
   if (has('independent')) {
     parts.push('Frame the next step as something they can do themselves — an independent child engages more when they feel ownership.');
@@ -1839,24 +1963,25 @@ const applyCaregiverFeeling = (guidance: Guidance, feeling: string): Guidance =>
 
 const applyAboutChild = (guidance: Guidance, about: AboutChild | undefined): Guidance => {
   if (!about) return guidance;
-  const parts: string[] = [];
-  if (about.whatWorks.trim()) {
-    parts.push(`What usually works: ${about.whatWorks.trim()}`);
+  const safeAbout = normalizeAboutChild(about);
+  const actions: string[] = [];
+  if (safeAbout.whatWorks.trim()) {
+    actions.push(`Use what usually works for this child when it fits safely: ${safeAbout.whatWorks.trim()}.`);
   }
-  if (about.workedBefore.trim()) {
-    parts.push(`what has helped before: ${about.workedBefore.trim()}`);
+  if (safeAbout.workedBefore.trim()) {
+    actions.push(`A previously helpful option to repeat is: ${safeAbout.workedBefore.trim()}.`);
   }
-  if (about.makesHarder.trim()) {
-    parts.push(`what tends to make things harder: ${about.makesHarder.trim()}`);
+  if (safeAbout.makesHarder.trim()) {
+    actions.push(`Reduce what you have saved as making this harder: ${safeAbout.makesHarder.trim()}.`);
   }
-  if (about.enjoys.trim()) {
-    parts.push(`what they enjoy: ${about.enjoys.trim()}`);
+  if (safeAbout.enjoys.trim()) {
+    actions.push(`If a bridge or calming cue is useful, connect it to something they enjoy: ${safeAbout.enjoys.trim()}.`);
   }
-  if (about.anythingElse.trim()) {
-    parts.push(`other things to know: ${about.anythingElse.trim()}`);
+  if (safeAbout.anythingElse.trim()) {
+    actions.push(`Also account for this saved context: ${safeAbout.anythingElse.trim()}.`);
   }
-  if (!parts.length) return guidance;
-  const contextNote = `\n\nWhat you know about this child — ${parts.join('; ')}.`;
+  if (!actions.length) return guidance;
+  const contextNote = `\n\nFor this child: ${actions.join(' ')}`;
   return { ...guidance, doNow: `${guidance.doNow}${contextNote}` };
 };
 
@@ -1898,24 +2023,14 @@ function App() {
   const [selectedChildForHelp, setSelectedChildForHelp] = useState<number | null>(() => {
     try {
       const saved = window.localStorage.getItem('littlewise-selected-child');
-      return saved ? parseInt(saved, 10) : null;
+      const parsed = saved ? Number.parseInt(saved, 10) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : null;
     } catch { return null; }
   });
   const [children, setChildren] = useState<ChildProfile[]>(() => {
     try {
       const saved = JSON.parse(window.localStorage.getItem('parenting-app-children') || '[]');
-      return Array.isArray(saved)
-        ? saved.map((child: ChildProfile) => ({
-            ...child,
-            reminders: Array.isArray(child.reminders) ? child.reminders : [],
-            savedHelp: Array.isArray(child.savedHelp) ? child.savedHelp : [],
-            development: Array.isArray(child.development) ? child.development : [],
-            traits: Array.isArray(child.traits) ? child.traits : [],
-            aboutChild: child.aboutChild ?? { enjoys: '', whatWorks: '', workedBefore: '', makesHarder: '', anythingElse: '' },
-            dailyLog: child.dailyLog ?? { date: new Date().toISOString().slice(0, 10), wakeTime: '', napTime: '', meals: '', mood: '', potty: '', note: '' },
-            pickyEating: child.pickyEating ?? { safeFoods: '', learningFoods: '', avoidTextures: '', mealtimeNotes: '' },
-          }))
-        : [];
+      return normalizeChildren(saved);
     } catch { return []; }
   });
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -1953,6 +2068,8 @@ function App() {
   const activityRef = useRef<HTMLElement | null>(null);
   const justTellMeRef = useRef<HTMLElement | null>(null);
   const helpJustTellMeRef = useRef<HTMLDivElement | null>(null);
+  const justTellMeResultRef = useRef<HTMLElement | null>(null);
+  const takingOverResultRef = useRef<HTMLDivElement | null>(null);
   const helpSectionRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
   const planMyDayRef = useRef<HTMLDivElement | null>(null);
@@ -1965,7 +2082,16 @@ function App() {
   const [justTellMeText, setJustTellMeText] = useState('');
   const [justTellMeResult, setJustTellMeResult] = useState<Guidance | null>(null);
   const [justTellMeTitle, setJustTellMeTitle] = useState('');
+  const [justTellMeLoading, setJustTellMeLoading] = useState(false);
+  const [justTellMeError, setJustTellMeError] = useState<string | null>(null);
+  const justTellMeSubmittingRef = useRef(false);
   const [justTellMeDeepDive, setJustTellMeDeepDive] = useState<DeepDive[]>([]);
+  const [routedHelpResult, setRoutedHelpResult] = useState<{
+    situation: Situation;
+    age: AgeId;
+    deepDive: DeepDive[];
+    useSelectedChild: boolean;
+  } | null>(null);
   const [selectedDevTopic, setSelectedDevTopic] = useState<string | null>(null);
   const [justTellMeDevResult, setJustTellMeDevResult] = useState<DevelopmentGuidance | null>(null);
   const [planMyDayResult, setPlanMyDayResult] = useState<DayPlan | null>(null);
@@ -1994,12 +2120,15 @@ function App() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [premiumUser, setPremiumUser] = useState<PremiumUser | null>(null);
   const premiumUserIdRef = useRef<string | undefined>(premiumUser?.id);
+  const previousPremiumUserIdRef = useRef<string | undefined>(premiumUser?.id);
   premiumUserIdRef.current = premiumUser?.id;
   const [premiumAuthReady, setPremiumAuthReady] = useState(false);
   const [premiumAuthMode, setPremiumAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [premiumAuthEmail, setPremiumAuthEmail] = useState('');
   const [premiumAuthPassword, setPremiumAuthPassword] = useState('');
   const [premiumAuthMessage, setPremiumAuthMessage] = useState<string | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [newPremiumPassword, setNewPremiumPassword] = useState('');
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showPremiumSuccess, setShowPremiumSuccess] = useState(false);
   const [justTellMeEntry, setJustTellMeEntry] = useState<'home' | 'help'>('home');
@@ -2105,6 +2234,7 @@ function App() {
     setActiveNav('home');
     setSelectedHelp(null);
     setSelectedSituation(null);
+    setRoutedHelpResult(null);
     setSelectedDevTopic(null);
     setShowHandoff(false);
     setShowAboutChild(false);
@@ -2406,15 +2536,29 @@ function App() {
     void getPremiumUser().then(user => {
       if (active && !authEventReceived) { setPremiumUser(user); setPremiumAuthReady(true); }
     }).catch(() => { if (active) setPremiumAuthReady(true); });
-    const unsubscribe = onPremiumAuthChange(user => {
+    const unsubscribe = onPremiumAuthChange((user, event) => {
       authEventReceived = true;
-      if (active) { setPremiumUser(user); setPremiumAuthReady(true); }
+      if (active) {
+        setPremiumUser(user);
+        setPremiumAuthReady(true);
+        if (event === 'PASSWORD_RECOVERY') {
+          setPasswordRecovery(true);
+          setShowPremiumModal(true);
+          setPremiumAuthMessage(null);
+        }
+      }
     });
     return () => { active = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {
-    applyPremiumStatus(false);
+    const previousUserId = previousPremiumUserIdRef.current;
+    previousPremiumUserIdRef.current = premiumUser?.id;
+    // Preserve a verified entitlement while the same user's refresh is in
+    // flight. Clear it only on sign-out or an actual account switch.
+    if (!premiumUser || (previousUserId && previousUserId !== premiumUser.id)) {
+      applyPremiumStatus(false);
+    }
     if (premiumUser) void refreshPremiumFromServer();
   }, [premiumUser?.id]);
 
@@ -2491,7 +2635,10 @@ function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [premiumUser?.id, isPremium]);
 
-  const [weatherData, setWeatherData] = useState<{ temp: number; code: number; description: string; locationName: string } | null>(null);
+  type WeatherUnit = 'fahrenheit' | 'celsius';
+  type WeatherReading = { temp: number; unit: WeatherUnit; code: number; description: string; locationName: string };
+  const defaultWeatherUnit: WeatherUnit = 'fahrenheit';
+  const [weatherData, setWeatherData] = useState<WeatherReading | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [weatherTime, setWeatherTime] = useState<5 | 15 | 20 | 30>(20);
@@ -2507,23 +2654,8 @@ function App() {
   const [takingOverAge, setTakingOverAge] = useState<AgeId | 'multiple'>('toddler');
   const [takingOverTime, setTakingOverTime] = useState<string>('30 min');
   const [takingOverSituation, setTakingOverSituation] = useState<string>('');
-  const [takingOverEnergy, setTakingOverEnergy] = useState<string>('');
-  const [takingOverPlan, setTakingOverPlan] = useState<null | {
-    rightNow: string;
-    next: string;
-    ifNotWorking: string;
-    keepBusy: string;
-    nextTransition: string;
-    premium?: {
-      doThisFirst: string;
-      whatToSay: string;
-      next10To15: string[];
-      planB: string;
-      avoid: string;
-      laterToday: string;
-      childNote?: string;
-    };
-  }>(null);
+  const [takingOverEnergy, setTakingOverEnergy] = useState<CareEnergy>('some');
+  const [takingOverPlan, setTakingOverPlan] = useState<CaregiverPlan | null>(null);
 
   const [showLearning, setShowLearning] = useState(false);
   const [showExploreHub, setShowExploreHub] = useState(false);
@@ -2560,7 +2692,13 @@ function App() {
   const [handoff, setHandoff] = useState(() => {
     try {
       const saved = window.localStorage.getItem('littlewise-handoff');
-      return saved ? { ...emptyHandoff, ...JSON.parse(saved) } : emptyHandoff;
+      if (!saved) return emptyHandoff;
+      const parsed = JSON.parse(saved);
+      if (!parsed || typeof parsed !== 'object') return emptyHandoff;
+      return Object.fromEntries(Object.keys(emptyHandoff).map((key) => [
+        key,
+        typeof parsed[key] === 'string' ? parsed[key] : '',
+      ])) as typeof emptyHandoff;
     } catch {
       return emptyHandoff;
     }
@@ -2672,9 +2810,8 @@ default:
   const currentHelpOption = selectedHelp === 'help-now'
     ? { id: 'help-now', title: 'What Do I Do Now?', description: 'One situation. One next step.', emoji: '🚨' }
     : visibleHelpOptions.find((item) => item.id === selectedHelp);
-  const currentSituation = situationList.find(
-    (item) => item.id === selectedSituation
-  );
+  const currentSituation = situationList.find((item) => item.id === selectedSituation)
+    ?? (routedHelpResult?.situation.id === selectedSituation ? routedHelpResult.situation : undefined);
 
   type QuickNeed = 'outside' | 'calm' | 'play' | 'get-things-done' | 'lowest-effort';
 
@@ -2771,7 +2908,8 @@ default:
 
   type WeatherCategory = 'hot' | 'rain' | 'cold' | 'pleasant';
 
-  const weatherCodeToCategory = (code: number, tempC: number): WeatherCategory => {
+  const weatherCodeToCategory = (code: number, temperature: number, unit: WeatherUnit = defaultWeatherUnit): WeatherCategory => {
+    const tempC = unit === 'fahrenheit' ? (temperature - 32) * 5 / 9 : temperature;
     if (code >= 51 && code <= 67) return 'rain';
     if (code >= 80 && code <= 82) return 'rain';
     if (code >= 95 && code <= 99) return 'rain';
@@ -2799,8 +2937,10 @@ default:
     return map[code] ?? 'Unknown';
   };
 
-  const fetchWeather = async (lat: number, lon: number): Promise<{ temp: number; code: number; description: string; locationName: string }> => {
-    const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=celsius&timezone=auto`);
+  const weatherUnitSymbol = (unit: WeatherUnit) => unit === 'fahrenheit' ? '°F' : '°C';
+
+  const fetchWeather = async (lat: number, lon: number, unit: WeatherUnit = defaultWeatherUnit): Promise<WeatherReading> => {
+    const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=${unit}&timezone=auto`);
     if (!weatherRes.ok) throw new Error('Weather service unavailable');
     const weatherJson = await weatherRes.json();
     const temp = Math.round(weatherJson.current?.temperature_2m ?? 0);
@@ -2819,7 +2959,7 @@ default:
       }
     } catch { /* reverse geocoding is best-effort */ }
 
-    return { temp, code, description: weatherCodeToDescription(code), locationName };
+    return { temp, unit, code, description: weatherCodeToDescription(code), locationName };
   };
 
   const requestWeatherLocation = () => {
@@ -2867,12 +3007,13 @@ default:
       const lon = r.longitude;
       const parts = [r.name, r.admin1, r.country].filter(Boolean);
       const locationName = parts.length ? parts.slice(0, 2).join(', ') : query;
-      const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=celsius&timezone=auto`);
+      const unit = defaultWeatherUnit;
+      const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=${unit}&timezone=auto`);
       if (!weatherRes.ok) throw new Error('Weather service unavailable');
       const weatherJson = await weatherRes.json();
       const temp = Math.round(weatherJson.current?.temperature_2m ?? 0);
       const code = weatherJson.current?.weather_code ?? 0;
-      setWeatherData({ temp, code, description: weatherCodeToDescription(code), locationName });
+      setWeatherData({ temp, unit, code, description: weatherCodeToDescription(code), locationName });
       setWeatherManualMode(false);
     } catch {
       setWeatherError('Could not load weather data. Please try again in a moment.');
@@ -2883,7 +3024,7 @@ default:
 
   const recommendWeatherActivities = () => {
     if (!weatherData) return;
-    const category = weatherCodeToCategory(weatherData.code, weatherData.temp);
+    const category = weatherCodeToCategory(weatherData.code, weatherData.temp, weatherData.unit);
     const stageAge: AgeId = ['baby', 'toddler', 'preschool', 'bigkid'].includes(selectedStage as string)
       ? selectedStage as AgeId
       : selectedAge;
@@ -2948,7 +3089,7 @@ default:
       cold: 'cold weather',
       pleasant: 'pleasant weather',
     };
-    setWeatherResultMessage(`Based on ${categoryLabels[category]} (${weatherData.description}, ${weatherData.temp}°C) in ${weatherData.locationName}.`);
+    setWeatherResultMessage(`Based on ${categoryLabels[category]} (${weatherData.description}, ${weatherData.temp}${weatherUnitSymbol(weatherData.unit)}) in ${weatherData.locationName}.`);
 
     window.setTimeout(() => {
       weatherResultRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
@@ -2964,7 +3105,10 @@ default:
   };
 
   const detectProblem = (lower: string): string | null => {
-    if (/meltdown|melting down|tantrum|crying|screaming|freaking out|losing it|out of control/.test(lower)) return 'meltdown';
+    // Active behavior phrases must be classified before broad topic words.
+    // Otherwise "throwing food" becomes generic meal-planning guidance.
+    if (/(?:throw|toss|chuck|fling)\w*(?:\s+\w+){0,3}\s+(?:food|meal|dinner|lunch|snack)|(?:food|meal|dinner|lunch|snack)(?:\s+\w+){0,3}\s+(?:throw|toss|chuck|fling)\w*/.test(lower)) return 'food-throwing';
+    if (/meltdown|melt(?:s|ing)? down|tantrum|crying|screaming|freaking out|losing it|out of control/.test(lower)) return 'meltdown';
     if (/hit|hitting|kick|kicking|bite|biting|hurt|hurting/.test(lower)) return 'hitting';
     if (/fight|fighting|arguing|won.?t share|sharing/.test(lower)) return 'fighting';
     if (/sleep|nap|bedtime|won.?t sleep|wont sleep|night waking|nightmare/.test(lower)) return 'sleep';
@@ -2999,10 +3143,34 @@ default:
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
+  const immediateSleepGuidance = (stage: AgeId, isNap = false): Partial<Guidance> => {
+    if (isNap) {
+      return {
+        doNow: stage === 'baby'
+          ? '1. Check hunger, diaper, temperature, pain, and illness once.\n\n2. Darken the room, lower noise, and use the familiar nap cue.\n\n3. Try one familiar soothing method for about five minutes.\n\n4. If your baby becomes more upset rather than settling, reset quietly for 10–20 minutes, then try again at the next sleepy cue.'
+          : '1. Dim the room, turn off screens, and stop active play.\n\n2. Check toilet, thirst, pain, illness, and comfort once.\n\n3. Use one short rest-time statement and offer only a book, comfort item, or other genuinely quiet activity.\n\n4. If sleep does not happen, keep a defined quiet-time window instead of turning it into a battle.',
+        sayThis: stage === 'baby' ? 'It is rest time. I am here.' : 'You do not have to sleep, but your body needs quiet rest now.',
+        thenTry: stage === 'baby' ? 'If the first soothing method is not helping, change position or briefly reset in low light rather than adding stimulation.' : 'If they leave the rest space, calmly return them once with the same sentence. If the nap is clearly not happening, finish the quiet-time window and move on.',
+        ifNotWorking: 'Use an earlier bedtime today if the missed nap leaves your child overtired. Review nap timing later, not during the refusal.',
+        afterward: 'After the immediate rest period, look at nap timing and afternoon behavior. Developmental and schedule adjustments belong here—not ahead of the steps to use right now.',
+      };
+    }
+
+    return {
+      doNow: stage === 'baby'
+        ? '1. Keep the room dark, quiet, and boring.\n\n2. Check feeding, diaper, temperature, pain, breathing, and illness once.\n\n3. Use one familiar soothing method and one short phrase.\n\n4. Return your baby to their safe sleep space on their back when appropriate. If settling is getting harder, pause briefly in low light and try the same routine again rather than adding stimulation.'
+        : '1. Keep the room dark, quiet, and boring; put away screens and stimulating toys.\n\n2. Check toilet, thirst, temperature, pain, fear, and illness once.\n\n3. Finish only the essential bedtime steps, then use one short, calm bedtime statement.\n\n4. If they refuse or get up, calmly guide them back with minimal talking. Repeat the same statement every time—no new negotiation, play, snacks, or extra routine steps.',
+      sayThis: stage === 'baby' ? 'It is time to rest. I am right here.' : 'It is bedtime. You are safe. I will help you back to bed.',
+      thenTry: stage === 'baby' ? 'If one familiar soothing method is not helping after a calm attempt, briefly reset in low light, recheck discomfort, and try again.' : 'If they are genuinely afraid or overwhelmed, stay quietly nearby or use one predictable brief check-in without restarting the routine.',
+      ifNotWorking: stage === 'baby' ? 'Contact a healthcare professional for breathing concerns, fever, poor feeding, pain, an unusual cry, or a significant change from normal.' : 'Keep returning them calmly and boringly tonight. Review bedtime and nap timing tomorrow rather than solving the schedule during the refusal.',
+      afterward: 'Tomorrow, consider timing, naps, stress, and the sleep environment. Keep developmental explanation and prevention planning after tonight’s immediate steps.',
+    };
+  };
+
   const getSpecificHelpNowSituationId = (lower: string): string | null => {
     // Route early waking before the generic sleep branch. This covers both a
     // child waking early and a sibling waking another child early.
-    const isEarlyWake = /\b(?:woke|woken|wake)\s+(?:up\s+)?(?:way\s+)?too\s+early\b|\b(?:toddler|child)\s+woke(?:\s+\w+){0,4}\s+early\b|\b(?:is|gets?)\s+up\s+(?:way\s+)?too\s+early\b|\bwakes?\s+at\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?)?\b/.test(lower);
+    const isEarlyWake = /\b(?:woke|woken|wakes?|wake)\s+(?:up\s+)?(?:way\s+)?too\s+early\b|\b(?:toddler|child)\s+woke(?:\s+\w+){0,4}\s+early\b|\b(?:is|gets?)\s+up\s+(?:way\s+)?too\s+early\b|\bwakes?\s+at\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?)?\b/.test(lower);
     if (isEarlyWake) {
       return /crying|screaming/.test(lower)
         ? 'early-wake-crying'
@@ -3011,28 +3179,251 @@ default:
         : 'early-wake-now';
     }
 
-    return /screen\s*(?:time)?\s*(?:is\s*)?(?:over|done|finished)|(?:turn(?:ed)?|shut)\s*(?:the\s*)?(?:screen|tv|tablet).*(?:scream|cry|meltdown|tantrum)/.test(lower)
+    const isNapRefusal = /\b(?:won.?t|will not|refus\w*|fight\w*)\b(?:\s+\w+){0,3}\s+nap\b|\bnap\s+(?:refusal|fight|battle)/.test(lower);
+    if (isNapRefusal) return 'nap-now';
+
+    const isBedtimeRefusal = /\b(?:won.?t|will not|refus\w*|fight\w*)\b(?:\s+\w+){0,5}\s+(?:sleep|bed|bedtime)\b|\b(?:keeps?\s+)?getting out of bed\b|\bwill not stay in bed\b/.test(lower);
+    if (isBedtimeRefusal) return 'sleep-now';
+
+    const isScreenEndingProblem = /screen|tv|television|tablet|ipad|video|youtube/.test(lower)
+      && /(?:turn|shut|switch)(?:ed|ing)?\s+(?:it\s+)?off|time.*(?:over|done|finished)|(?:over|done|finished).*(?:screen|tv|tablet)|meltdown|tantrum|scream|cry|fight/.test(lower);
+    return isScreenEndingProblem
       ? 'screen-now'
-      : /\b(?:won.?t|will not|refus\w* to)\s+nap\b|\bnap\s+(?:fight|battle|refusal)/.test(lower)
-      ? 'nap-now'
-      : /\b(?:gets?|getting|keeps?)\s+out\s+of\s+bed\b/.test(lower)
-      ? 'sleep-now'
       : /\b(?:scared|afraid|fearful)\b.*\b(?:bed|bedtime|sleep)\b/.test(lower)
       ? 'sleep-now'
-      : /\b(?:won.?t|will not|refus\w* to)\s+(?:get\s+)?dressed\b|\b(?:get|getting)\s+dressed\b/.test(lower)
+      : /\b(?:won.?t|will not|refus\w* to)\s+(?:get\s+)?dressed\b|\b(?:get|getting)\s+dressed\b|\b(?:won.?t|refus\w* to)\s+(?:put on|wear)\s+(?:their\s+)?shoes\b/.test(lower)
       ? 'dressed-now'
       : null;
   };
 
   const getJustTellMeGuidance = (text: string): { guidance: Guidance; deepDive: DeepDive[] } => {
-    const lower = text.toLowerCase();
-    const stage = detectStage(lower) ?? selectedAge;
+    const lower = text.toLowerCase().trim()
+      .replace(/\btantrm\b/g, 'tantrum')
+      .replace(/\bscreming\b/g, 'screaming')
+      .replace(/\bhiting\b/g, 'hitting')
+      .replace(/\bbiteing\b/g, 'biting')
+      .replace(/\bchocking\b/g, 'choking')
+      .replace(/\bbrething\b/g, 'breathing')
+      .replace(/\bpoision(?:ing)?\b/g, 'poisoning')
+      .replace(/\bpoty\b/g, 'potty')
+      .replace(/\bsleap\b/g, 'sleep');
+    const explicitStage = detectStage(lower);
+    const stage = explicitStage ?? (selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : selectedAge);
     const problem = detectProblem(lower);
     const constraint = detectConstraint(lower);
 
     const stageLabel: Record<AgeId, string> = {
       baby: 'baby', toddler: 'toddler', preschool: 'preschooler', bigkid: 'school-age child', tween: 'tween',
     };
+    const describedChild = explicitStage || selectedHelpChild || homePersonChosen ? stageLabel[stage] : 'child';
+
+    const severeEmergency = /(?:chok(?:e|ing)|can(?:not|'?t)\s+(?:breathe|breath|cough|speak)|trouble breathing|not breathing|blue lips?|turning blue|serious injury|severe bleeding|won(?:'|’)t wake|will not wake|unresponsive|not responsive|unconscious|seizure)/.test(lower);
+    const possiblePoisoning = /poison(?:ed|ing)?|swallowed (?:medicine|chemical|cleaner|detergent|battery)|ate (?:medicine|pills)|button battery/.test(lower);
+    if (severeEmergency) {
+      return { guidance: {
+        title: 'Get emergency help now', emoji: '🚨',
+        doNow: 'Call 911 (or your local emergency number) now. Put the phone on speaker and follow the dispatcher’s instructions. If the child is choking or not breathing, begin age-appropriate first aid or CPR if you know how; do not wait for an app response.',
+        sayThis: 'I need emergency help for a child. Here is our location and what happened.',
+        avoidThis: 'Do not leave the child alone, delay the call, or do a blind finger sweep in a choking child’s mouth.',
+        afterward: possiblePoisoning ? 'After emergency help is on the way, have the product or container available and follow the dispatcher or Poison Control instructions.' : 'Stay with the child and follow the emergency dispatcher’s instructions until help arrives.'
+      }, deepDive: [] };
+    }
+    if (possiblePoisoning) {
+      return { guidance: {
+        title: 'Contact Poison Control now', emoji: '☎️',
+        doNow: 'In the U.S., call Poison Control now at 1-800-222-1222 or use PoisonHelp.org. Keep the product, medicine, or container with you and follow their instructions. If the child collapses, has trouble breathing, has a seizure, or cannot be awakened, call 911 first.',
+        sayThis: 'A child may have swallowed or touched this product. I can tell you their age, symptoms, the product, amount, and time.',
+        avoidThis: 'Do not make the child vomit or give food, drink, or a home remedy unless Poison Control or a clinician tells you to.',
+        afterward: 'Continue watching the child and follow the exact monitoring or medical-care instructions Poison Control gives you.'
+      }, deepDive: [] };
+    }
+
+    // High-frequency situations that need their own immediate response but do
+    // not need another permanent button in the interface.
+    if (/time[ -]?out/.test(lower)) {
+      return { guidance: {
+        title: 'Choose the response that fits the behavior', emoji: '🧭',
+        doNow: stage === 'baby'
+          ? 'Do not use time-out with a baby. Move them away from the unsafe or unwanted action, make the safe option easier, and stay close.'
+          : 'Start with a clear boundary, redirection, and staying nearby while your child regulates. A calm-down space or a related consequence is often more useful than automatic isolation.',
+        sayThis: 'I will not let you do that. I am staying close while you calm down, and then we will try again.',
+        avoidThis: 'Do not use time-out to punish crying, fear, overwhelm, or a developmentally normal mistake. Do not shame, lock a child in a room, or leave an unsafe child alone.',
+        afterward: stage === 'toddler' || stage === 'preschool'
+          ? 'If your family uses time-out for a specific repeated unsafe behavior, keep it calm and brief. About one minute per year of age is a general guideline, not a rigid rule. Restate the boundary, reconnect, and practice what to do instead.'
+          : 'Use a logical consequence connected to the behavior, reconnect afterward, and practice the replacement behavior when everyone is calm.'
+      }, deepDive: [] };
+    }
+
+    if (/overstimulated|overwhelmed|about to yell|going to yell|might yell|tried everything|everyone is crying|need (?:five|5) minutes|no energy left|at my limit/.test(lower)) {
+      const unsafe = /lose control|hurt|shake|hit my|cannot keep.*safe/.test(lower);
+      return { guidance: {
+        title: unsafe ? 'Make the moment safe first' : 'Take a five-minute caregiver reset', emoji: '💛',
+        doNow: 'Put each child in the safest appropriate place you have—a crib, gated childproofed space, or separate calm spots. Lower noise, stop the nonessential task, and step a few feet away for slow breaths, water, or cold water on your face. If another adult is available, hand off directly.',
+        sayThis: 'Everyone is safe. I need five quiet minutes, then I will come back and help.',
+        avoidThis: 'Do not discipline or solve the whole day while you are at your limit. Never shake a baby. If you may lose control, create safe distance and call someone now.',
+        afterward: unsafe ? 'Call a trusted adult or emergency/crisis support if you cannot keep everyone safe. Repair calmly after you are regulated.' : 'Return to only the next need—food, diaper/toilet, rest, or safety—and let everything else wait.'
+      }, deepDive: [] };
+    }
+
+    if (/public|store|restaurant|parking lot/.test(lower) && /meltdown|tantrum|scream|cry/.test(lower)) {
+      return { guidance: {
+        title: 'Handle the public meltdown safely', emoji: '🌋',
+        doNow: 'Move to the safest quieter nearby place—the edge of the store, outside, or the car only if temperature and supervision are safe. Block hitting or running, lower your voice, and pause the errand.',
+        sayThis: 'You are safe. We are taking a quiet break. I will talk when your body is calmer.',
+        avoidThis: 'Avoid arguing for the audience, threatening embarrassment, buying the demanded item to stop the noise, or forcing eye contact.',
+        afterward: 'When calm, decide whether to finish one essential task or leave. Later, preview the outing and bring a snack, comfort item, or exit plan.'
+      }, deepDive: [] };
+    }
+
+    if (/(?:throw|toss|chuck|fling)\w* (?!food)(?:things?|toys?|objects?|stuff)|(?:things?|toys?|objects?|stuff).*(?:throw|toss|chuck|fling)/.test(lower)) {
+      return { guidance: {
+        title: 'Stop unsafe throwing', emoji: '🛑',
+        doNow: 'Move people and breakable objects out of range, calmly block or remove the object, and offer a safe throwing option only if the child is regulated enough to use it.',
+        sayThis: 'I will not let you throw that. You may throw this soft ball into the basket.',
+        avoidThis: 'Avoid throwing the object back, a long lecture, or using isolation as the automatic response to overwhelm.',
+        afterward: 'When calm, practice where throwing is allowed and use a logical consequence: the unsafe item rests for now.'
+      }, deepDive: [] };
+    }
+
+    if (/separation anx|cries? when I leave|won.?t let me leave|clingy at (?:bed|night)|needs? me to fall asleep/.test(lower)) {
+      return { guidance: {
+        title: 'Respond to separation anxiety predictably', emoji: '🫶',
+        doNow: stage === 'baby' ? 'Check needs, use the familiar sleep or goodbye routine, and offer calm repeated reassurance. Keep departures brief and always return as promised.' : 'Name the worry, use one short goodbye or bedtime ritual, and follow through. Offer a comfort item and one predictable check-in rather than restarting the whole routine.',
+        sayThis: 'You are safe. I am leaving now, and I will come back after the timer/check-in.',
+        avoidThis: 'Avoid sneaking away, stretching the goodbye, promising you will never leave, or treating fear as misbehavior.',
+        afterward: 'Practice tiny separations when calm and keep the same return ritual. Seek professional advice if anxiety is intense, persistent, or prevents ordinary daily activities.'
+      }, deepDive: [] };
+    }
+
+    if (problem === 'food-throwing' || /(?:food|meal|dinner|lunch|snack).*(?:floor|ground)/.test(lower)) {
+      return { guidance: {
+        title: 'Stop food throwing without a battle', emoji: '🍽️',
+        doNow: 'Stay calm and move extra food out of reach. Return the plate with a small amount, place a discard bowl beside it when appropriate, and give one short boundary. If food is thrown again, calmly remove the meal and help the child down if they are finished.',
+        sayThis: 'Food stays on the table. Put food you do not want in this bowl. If you throw again, I will know you are all done.',
+        avoidThis: 'Avoid a big reaction, repeatedly returning thrown food, shaming the mess, or treating common toddler experimentation as deliberate bad behavior.',
+        afterward: 'If they are hungry later, offer the next planned meal or snack rather than a special replacement immediately. At the next meal, begin with a small portion and practice “all done” or using the discard bowl.'
+      }, deepDive: [
+        { heading: 'If it keeps happening', body: 'End the meal neutrally after the repeated boundary: “You are showing me you are finished.” Clean up without turning it into a punishment or a performance.' },
+        { heading: 'Why young children throw food', body: 'Throwing can mean “all done,” experimentation, overload, or wanting a reaction. The useful response is a predictable boundary and an acceptable way to reject food—not assuming bad intent.' },
+        { heading: 'Make the next meal easier', body: 'Seat the child securely, offer small portions with more available, keep the meal reasonably brief, and notice whether throwing reliably starts when hunger is gone.' },
+      ] };
+    }
+
+    if (/only wants? snacks|won.?t eat (?:dinner|meals?).*snack|asks? for snacks? all day|snack.*instead of/.test(lower)) {
+      return { guidance: {
+        title: 'Reset the snack-and-meal rhythm', emoji: '🍎',
+        doNow: 'Keep the current meal simple and include one familiar food. If they decline, end neutrally and offer the next planned snack rather than an immediate preferred replacement.',
+        sayThis: 'You do not have to eat. This is what is available now; the next snack is after ___.',
+        avoidThis: 'Avoid grazing all day, bargaining bites for treats, or turning dinner refusal into a long standoff.',
+        afterward: 'Use predictable meal and snack times for several days and make snacks substantial rather than constant.'
+      }, deepDive: [] };
+    }
+
+    if (/poop.*(?:refus|withhold|holding)|won.?t poop|afraid to poop/.test(lower)) {
+      return { guidance: {
+        title: 'Take pressure off poop withholding', emoji: '💩',
+        doNow: 'Stop pushing for a bowel movement. Offer a relaxed toilet sit with feet supported, privacy or closeness as preferred, fluids, and normal food. If it hurts, treat pain and constipation as the problem—not defiance.',
+        sayThis: 'You are not in trouble. We can help your poop come out without hurting.',
+        avoidThis: 'Avoid punishment, forced sitting, repeated reminders, or celebrating so intensely that pooping feels like a performance.',
+        afterward: 'Contact the child’s healthcare professional for pain, blood, significant withholding, stool leakage, vomiting, a swollen belly, or persistent constipation.'
+      }, deepDive: [] };
+    }
+
+    if (/potty|toilet|bathroom/.test(lower) && /bed|stall|again|keeps? asking/.test(lower)) {
+      return { guidance: {
+        title: 'Handle bedtime potty requests consistently', emoji: '🚽',
+        doNow: 'Allow one quiet, boring bathroom trip with dim lights and no play. Help them try, then return directly to bed.',
+        sayThis: 'You may try the potty once. Then it is sleep time.',
+        avoidThis: 'Do not deny a genuine need, but avoid turning repeated trips into conversation, play, or a new bedtime routine.',
+        afterward: 'Build a final toilet trip into the routine. If frequent urination, pain, new accidents, constipation, or unusual thirst appears, contact a healthcare professional.'
+      }, deepDive: [] };
+    }
+
+    if (/both (?:kids|children).*(?:cry|need)|everyone.*cry|baby.*cry.*(?:toddler|older)|(?:toddler|older).*(?:act|hit|scream).*(?:baby|feeding|nurs)/.test(lower)) {
+      return { guidance: {
+        title: 'Triage two children who need you', emoji: '👭',
+        doNow: 'Check immediate safety first. Meet the need that cannot wait—breathing, injury, unsafe aggression, or a baby’s urgent physical need—while placing the other child safely nearby and narrating when you will turn to them.',
+        sayThis: 'I hear both of you. I am making everyone safe, then I will help you next.',
+        avoidThis: 'Avoid deciding whose feelings matter more, demanding patience from a flooded child, or leaving the baby within reach of hitting or pushing.',
+        afterward: 'Give the waiting child two focused minutes when safe, then simplify the next transition. Build a small predictable one-on-one ritual around baby care.'
+      }, deepDive: [] };
+    }
+
+    if (/sibling|brother|sister/.test(lower) && /hit|kick|bite|push|hurt/.test(lower)) {
+      return { guidance: {
+        title: 'Stop sibling aggression first', emoji: '🛑',
+        doNow: 'Move between the children, block the hit, bite, kick, or push, and separate them far enough that neither can immediately reach the other. Check the hurt child, while keeping the other child safely nearby.',
+        sayThis: 'I will not let you hurt your sibling. I am moving you apart. I will help both of you when bodies are safe.',
+        avoidThis: 'Avoid forcing an apology, deciding the whole conflict, or asking “why” while either child is still escalated.',
+        afterward: 'When both are calm, briefly name what happened, repair any harm, and practice a specific replacement such as “move back,” “my turn,” or getting an adult.'
+      }, deepDive: [] };
+    }
+
+    if (/car ?seat/.test(lower) && /refus|fight|won.?t|will not|scream|arch/.test(lower)) {
+      return { guidance: {
+        title: 'Get into the car seat safely', emoji: '🚗',
+        doNow: 'Park safely and stop negotiating. Offer one choice that does not change the safety boundary, then calmly help your child into the correctly installed seat and buckle according to its instructions.',
+        sayThis: 'You may climb in, or I will help your body in. The buckle is not a choice.',
+        avoidThis: 'Never drive with an unbuckled child or add unsafe padding, bulky coats, or unapproved accessories to solve resistance.',
+        afterward: 'Practice climbing and buckling when you are not rushed and give one transition warning before leaving.'
+      }, deepDive: [] };
+    }
+
+    if (/clean ?up|pick up toys/.test(lower) && /refus|won.?t|fight|meltdown/.test(lower)) {
+      return { guidance: {
+        title: 'Make cleanup small and concrete', emoji: '🧺',
+        doNow: 'Reduce cleanup to one visible category and start beside your child: blocks in the bin, then books on the shelf. Use a short song or timer if that helps.',
+        sayThis: 'You do the blocks and I will do the books. Then we are done.',
+        avoidThis: 'Avoid “clean everything,” repeated warnings, or dumping out more toys as a consequence.',
+        afterward: 'Store fewer choices at once and give a predictable cleanup warning before the next transition.'
+      }, deepDive: [] };
+    }
+
+    if (/(?:bath|tooth|teeth|brush)/.test(lower) && /refus|won.?t|fight|hate|meltdown/.test(lower)) {
+      const teeth = /tooth|teeth|brush/.test(lower);
+      return { guidance: {
+        title: teeth ? 'Get teeth brushed with less conflict' : 'Get through the bath safely', emoji: teeth ? '🪥' : '🛁',
+        doNow: teeth ? 'Offer two acceptable choices—where to brush or which song—then let them start and calmly tell them the adult will finish the missed spots.' : 'Keep the bath short. Offer two choices such as bubbles or no bubbles, then help with only the necessary washing and get out.',
+        sayThis: teeth ? 'You start, then I will help finish. Do you want the mirror or the song?' : 'It is bath time. Do you want bubbles or no bubbles?',
+        avoidThis: 'Avoid threats, shame, surprise grabbing, or turning the routine into a long negotiation.',
+        afterward: 'Keep the order and wording predictable. If sensory discomfort is strong, try lower stimulation and discuss persistent pain or oral/sensory concerns with an appropriate professional.'
+      }, deepDive: [] };
+    }
+
+    if (/after[ -]?(?:school|preschool|daycare)|pickup/.test(lower) && /meltdown|melt(?:s|ing)? down|cry|scream|falling apart|tantrum/.test(lower)) {
+      return { guidance: {
+        title: 'Decompress after school first', emoji: '🎒',
+        doNow: 'Pause questions and demands. Offer water, a familiar snack, and 15–30 minutes of low-demand connection or quiet play before addressing behavior or starting another task.',
+        sayThis: 'You held a lot together today. Food and quiet first; we can talk later.',
+        avoidThis: 'Avoid rapid questions, errands, homework, or consequences before hunger and overload have eased.',
+        afterward: 'Build a predictable pickup snack and decompression routine. Revisit any problem once your child is regulated.'
+      }, deepDive: [] };
+    }
+
+    if (/wakes?|waking|woke/.test(lower) && /overnight|during the night|middle of the night|at night|every night|3\s*a\.?m/.test(lower)) {
+      const babyNow = 'Keep the room dark. Check breathing, temperature, diaper, hunger, pain, and illness. Feed or comfort as needed, then return your baby to their safe sleep space on their back.';
+      const childNow = 'Keep lights off and conversation minimal. Check toilet, pain, illness, fear, and thirst; meet one real need, then calmly return them to bed using the usual short phrase.';
+      return { guidance: {
+        title: `${stageLabel[stage][0].toUpperCase()}${stageLabel[stage].slice(1)} waking overnight`, emoji: '🌙',
+        doNow: stage === 'baby' ? babyNow : childNow,
+        sayThis: stage === 'baby' ? 'I am here. It is still sleep time.' : 'You are safe. It is still nighttime. I will help you back to bed.',
+        avoidThis: 'Avoid bright lights, screens, play, long conversations, or changing the response from one waking to the next.',
+        afterward: stage === 'baby' ? 'In daylight, review feeds, naps, illness, and sleep timing. Frequent waking can be developmentally common, but contact your pediatrician for breathing concerns, poor feeding, fever, pain, or an unusual change.' : 'Tomorrow, track bedtime, wake time, naps, and what happened before each waking. Discuss snoring, breathing pauses, pain, or persistent daytime sleepiness with a healthcare professional.'
+      }, deepDive: [] };
+    }
+
+    if (/refus\w*|won.?t|will not|fights?/.test(lower) && /sleep|bed|bedtime/.test(lower)) {
+      const immediate = immediateSleepGuidance(stage);
+      return { guidance: {
+        title: `${stageLabel[stage][0].toUpperCase()}${stageLabel[stage].slice(1)} refusing sleep`, emoji: '🌙',
+        doNow: immediate.doNow!,
+        sayThis: immediate.sayThis!,
+        avoidThis: 'Avoid adding new requests, screens, energetic play, threats, or a long lecture. Keep tonight boring and predictable.',
+        afterward: immediate.afterward!,
+        thenTry: immediate.thenTry,
+        ifNotWorking: immediate.ifNotWorking,
+      }, deepDive: [] };
+    }
 
     // Prefer the existing, detailed Help Now cards for common wording before
     // the broad problem matcher falls back to generic guidance.
@@ -3040,7 +3431,17 @@ default:
     if (specificSituationId) {
       const situation = allHelpNowSituations.find(item => item.id === specificSituationId);
       const guidance = situation?.guidance[stage];
-      if (guidance) return { guidance, deepDive: allDeepDiveBySituation[specificSituationId] ?? [] };
+      if (guidance) {
+        const immediateOverride = specificSituationId === 'sleep-now'
+          ? immediateSleepGuidance(stage)
+          : specificSituationId === 'nap-now'
+          ? immediateSleepGuidance(stage, true)
+          : null;
+        return {
+          guidance: immediateOverride ? { ...guidance, ...immediateOverride } : guidance,
+          deepDive: allDeepDiveBySituation[specificSituationId] ?? [],
+        };
+      }
     }
 
     // COMBINATION: meltdown + need to cook/make dinner
@@ -3053,7 +3454,7 @@ default:
         guidance: {
           title: `${stageLabel[stage][0].toUpperCase()}${stageLabel[stage].slice(1)} meltdown + you need to ${taskLabel}`,
           emoji: '😤',
-          doNow: `Get your ${stageLabel[stage]} somewhere safe and stay nearby while you give them a simple boundary and reduce talking. Then give them ${activitySuggestion} while you ${taskLabel}.`,
+          doNow: `Get your ${stageLabel[stage]} somewhere safe and stay nearby while you give them a simple boundary and reduce talking. Try one familiar calming cue—a cuddle if welcomed, slow breathing together, or quiet music—then give them ${activitySuggestion} while you ${taskLabel}.`,
           sayThis: `I know you\'re upset. I\'m going to ${taskLabel}, and you can sit here with your ${stage === 'baby' ? 'toys' : 'stickers'} while I work. I\'ll check on you when I\'m done with this step.`,
           avoidThis: 'Avoid trying to reason through the entire meltdown or offering lots of choices while they are highly upset.',
           afterward: 'Once things are calm, reconnect briefly and move on. Dinner does not need to be perfect.',
@@ -3171,13 +3572,34 @@ default:
       };
     }
 
+    // SINGLE PROBLEM: an active meltdown or screaming episode. Keep prevention
+    // and developmental explanation after the immediate regulation steps.
+    if (problem === 'meltdown') {
+      return {
+        guidance: {
+          title: 'Make the meltdown safe and smaller', emoji: '🌋',
+          doNow: 'Move unsafe objects away, block hitting or running, lower your voice, and stop adding questions or demands. Stay nearby and offer one familiar calming option—quiet music, a cuddle if welcomed, or a low-stimulation spot.',
+          sayThis: 'You are safe. I am here. We will talk when your body is calmer.',
+          avoidThis: 'Avoid reasoning, threatening, demanding an apology, or offering many choices while the child is overwhelmed.',
+          afterward: 'Once calm, reconnect first. Then handle the original limit in one sentence and notice whether hunger, tiredness, noise, or a transition contributed.'
+        },
+        deepDive: [
+          { heading: 'If it continues', body: 'Keep the boundary and reduce the audience and stimulation. Use fewer words, stay close enough for safety, and wait for the intensity to come down before teaching.' },
+          { heading: 'Plan for the next occurrence', body: 'Look for the earliest sign of overload and intervene there with a warning, food or rest when needed, a smaller choice, or a calmer transition.' },
+        ],
+      };
+    }
+
     // SINGLE PROBLEM: hitting
     if (problem === 'hitting') {
+      const action = /bit|bite/.test(lower) ? 'bite' : /kick/.test(lower) ? 'kick' : 'hit';
       return {
         guidance: {
           title: 'Stop the unsafe behavior first', emoji: '🛑',
-          doNow: 'Block the hit or kick, create space, and keep your words short and calm.',
-          sayThis: 'I will not let you hurt anyone. I will help you.',
+          doNow: action === 'bite'
+            ? 'Move the child’s mouth away from skin, separate the children or bodies, and check the bitten person. Stay close enough to prevent another bite while using very few words.'
+            : `Block the ${action}, move the other person out of reach, and check for injury. Keep your words short and calm while you prevent another ${action}.`,
+          sayThis: `I will not let you ${action}. I am moving us apart to keep everyone safe.`,
           avoidThis: 'Avoid hitting back, threatening, or giving a long lecture during the moment.',
           afterward: 'Once everyone is calm, name the feeling and practice the safer replacement.'
         },
@@ -3229,13 +3651,16 @@ default:
 
     // SINGLE PROBLEM: potty
     if (problem === 'potty') {
+      const isRefusal = /refus\w*|won.?t|will not|fight(?:s|ing)?|afraid|scared/.test(lower);
       return {
         guidance: {
-          title: 'Keep the potty moment low-pressure', emoji: '🚽',
-          doNow: 'Stay neutral, help your child get cleaned up if needed, and return to the normal bathroom routine.',
-          sayThis: 'Accidents happen. We can clean up and try again.',
+          title: isRefusal ? 'Take the pressure out of this potty try' : 'Keep the potty moment low-pressure', emoji: '🚽',
+          doNow: isRefusal
+            ? 'Stop the power struggle and check whether your child urgently needs to go. Offer one brief, low-pressure try with a small choice—potty or toilet, door open or closed. If they are physically comfortable and still refuse, pause and try again at the next normal bathroom time; do not hold them down or force a long sit.'
+            : 'Stay neutral, help your child get cleaned up if needed, and return to the normal bathroom routine.',
+          sayThis: isRefusal ? 'Your body is in charge of pee and poop. You can choose the potty or toilet for one quick try.' : 'Accidents happen. We can clean up and try again.',
           avoidThis: 'Avoid shame, punishment, or turning the bathroom into a power struggle.',
-          afterward: 'Look for patterns such as constipation, distraction, or long stretches between bathroom opportunities.'
+          afterward: 'Look for patterns such as constipation, pain, fear, distraction, or long stretches between bathroom opportunities. Contact a healthcare professional for pain, blood, a swollen belly, repeated withholding, or ongoing constipation.'
         },
         deepDive: [],
       };
@@ -3243,11 +3668,12 @@ default:
 
     // SINGLE PROBLEM: fighting (no constraint)
     if (problem === 'fighting') {
+      const overToy = /toy|turn|share|sharing|grab/.test(lower);
       return {
         guidance: {
-          title: 'Stop the fighting and keep everyone safe', emoji: '🥊',
-          doNow: 'Separate if needed, stop hitting or grabbing, and help everyone calm down before solving the problem.',
-          sayThis: 'I will not let you hurt each other. We can solve it when bodies are calm.',
+          title: overToy ? 'Stop the tug-of-war first' : 'Stop the fighting and keep everyone safe', emoji: '🥊',
+          doNow: overToy ? 'Block hitting or grabbing and hold the toy yourself until bodies are safe. Separate the children if needed. Once both can listen, choose one simple plan: a short timed turn for each child, a second acceptable toy, or put this toy away for now.' : 'Separate if needed, stop hitting or grabbing, and help everyone calm down before solving the problem.',
+          sayThis: overToy ? 'I will hold the toy while bodies get safe. Then we will choose turns or put it away.' : 'I will not let you hurt each other. We can solve it when bodies are calm.',
           avoidThis: 'Avoid deciding who is the bad guy while everyone is upset.',
           afterward: 'Help each child name what they wanted and practice a safer response.'
         },
@@ -3340,28 +3766,39 @@ default:
     // SMART FALLBACK: make a reasonable interpretation and help immediately
     return {
       guidance: {
-        title: 'Start with connection, then hold the boundary', emoji: '💛',
-        doNow: `Get close to your ${stageLabel[stage]} and give one clear, simple direction. Connect first — a brief touch or acknowledging word — then state what needs to happen. Say it once and wait. If your ${stageLabel[stage]} resists, hold the boundary calmly without repeating or escalating.`,
-        sayThis: 'I hear you. Here is what we need to do right now. I will help you with it.',
-        avoidThis: 'Avoid repeating the same instruction many times or turning it into a negotiation. One clear request, proximity, and a calm follow-through work better than escalating words.',
-        afterward: 'Tell me a little more about what is happening — what your child is doing, what you have already tried, and what you need to happen next — and I will give you a more specific next step.'
+        title: 'Make the next minute safe and simple', emoji: '💛',
+        doNow: `1. Check whether anyone is hurt, in danger, or has an urgent physical need; address that first.\n\n2. Reduce noise, move unsafe objects away, and get close enough to supervise your ${describedChild}.\n\n3. State the one concrete action needed next—such as “feet on the floor,” “hands stay safe,” or “come with me”—then help them follow through calmly.`,
+        sayThis: 'I am here. First we are going to make this safe. Then we will handle one thing at a time.',
+        avoidThis: 'Avoid guessing at a diagnosis, giving several directions, or trying to solve the entire pattern while the immediate situation is unclear.',
+        afterward: 'For a situation-specific answer, add what the child is doing right now, the child’s age if known, and what needs to happen next.'
       },
       deepDive: [
-        { heading: 'Why connection first', body: 'When a child is not cooperating, getting close and connecting briefly before giving the direction helps their nervous system stay regulated. A child who feels connected is more able to cooperate.' },
-        { heading: 'Why one clear request works', body: 'Repeating instructions trains a child to wait for the fifth or sixth repetition before responding. One clear request, delivered close and calmly, teaches them to listen the first time.' },
+        { heading: 'Why this answer is broader', body: 'The question did not identify a specific behavior or immediate goal, so the safest useful first step is triage, supervision, and one concrete direction rather than invented details.' },
+        { heading: 'What detail will sharpen it', body: 'Describe the visible behavior—crying, hitting, refusing bed, throwing food—and what needs to happen next. One sentence is enough.' },
       ],
     };
   };
 
   const handleJustTellMe = (entry: 'home' | 'help' = 'home') => {
+    if (justTellMeSubmittingRef.current) return;
     const text = justTellMeText.trim();
     if (!text) return;
+    justTellMeSubmittingRef.current = true;
+    setJustTellMeLoading(true);
+    setJustTellMeError(null);
+    try {
     if (!tryUsePersonalizedHelp()) return;
     setJustTellMeEntry(entry);
     const lower = text.toLowerCase();
     // Specific immediate-help requests take precedence over the broader
     // development-topic cards, so the answer stays next-step focused.
-    const devTopicId = getSpecificHelpNowSituationId(lower) ? null : detectDevelopmentTopic(lower);
+    const hasImmediateNeed = Boolean(
+      getSpecificHelpNowSituationId(lower)
+      || detectProblem(lower)
+      || detectConstraint(lower)
+      || /chok|breath|poison|serious injury|severe bleeding|won(?:'|’)t wake|unresponsive|unconscious|seizure|time[ -]?out|overstimulated|overwhelmed|about to yell|tried everything|everyone is crying|need (?:five|5) minutes|separation anx|car ?seat|clean ?up|pick up toys|after[ -]?(?:school|preschool|daycare)|pickup|only wants? snacks|throw(?:s|ing)? food|won.?t poop|withhold|overnight|middle of the night|3\s*a\.?m/.test(lower)
+    );
+    const devTopicId = hasImmediateNeed ? null : detectDevelopmentTopic(lower);
     if (devTopicId) {
       const topic = getDevelopmentTopic(devTopicId);
       if (topic) {
@@ -3372,21 +3809,96 @@ default:
         setJustTellMeDeepDive([]);
         setJustTellMeDevResult(devGuidance);
         window.setTimeout(() => {
-          (entry === 'help' ? helpJustTellMeRef.current : justTellMeRef.current)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+          justTellMeResultRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
         }, 50);
         return;
       }
     }
+
+    if (hasImmediateNeed) {
+      const explicitStage = detectStage(lower);
+      const stage = explicitStage ?? (selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : selectedAge);
+      const multipleChildrenInQuestion = /\b(?:my kids|both (?:my )?(?:kids|children)|the kids|siblings?|brother|sister|toddler and (?:a )?baby|baby and (?:a )?toddler)\b/i.test(text);
+      const useSelectedChild = Boolean(selectedHelpChild)
+        && !multipleChildrenInQuestion
+        && (!explicitStage || getChildGuidanceAge(selectedHelpChild!.age) === explicitStage);
+      const problem = detectProblem(lower);
+      const specificId = getSpecificHelpNowSituationId(lower);
+      const needsSpecificDynamicResult =
+        problem === 'food-throwing'
+        || (problem === 'hitting' && /bit|kick/.test(lower))
+        || (problem === 'fighting' && /toy|turn|share|grab|push|hit|bit/.test(lower))
+        || problem === 'potty'
+        || /night waking|middle of the night|overnight|3\s*a\.?m|car ?seat|tooth ?brush|brush(?:ing)? (?:their )?teeth|both (?:my )?(?:kids|children)|everyone is crying|cooking|make dinner/.test(lower);
+      const sharedId = needsSpecificDynamicResult ? null : specificId
+        ?? (problem === 'meltdown' ? 'meltdown-now'
+          : problem === 'hitting' ? 'hitting-now'
+          : problem === 'fighting' ? 'fighting-now'
+          : problem === 'sleep' ? 'sleep-now'
+          : problem === 'food' ? 'eat-now'
+          : problem === 'screen' ? 'screen-now'
+          : problem === 'listening' ? 'won-t-listen'
+          : problem === 'transition' ? 'leaving-now'
+          : null);
+      const sharedSituation = sharedId ? allHelpNowSituations.find((item) => item.id === sharedId) : undefined;
+      const generated = getJustTellMeGuidance(text);
+      const routedSituation: Situation = sharedSituation ?? {
+        id: `routed-${problem ?? 'immediate-help'}`,
+        title: generated.guidance.title,
+        emoji: generated.guidance.emoji,
+        guidance: {
+          baby: generated.guidance,
+          toddler: generated.guidance,
+          preschool: generated.guidance,
+          bigkid: generated.guidance,
+          tween: generated.guidance,
+        },
+      };
+      setJustTellMeTitle(text);
+      setJustTellMeResult(null);
+      setJustTellMeDevResult(null);
+      setJustTellMeDeepDive([]);
+      setRoutedHelpResult({
+        situation: routedSituation,
+        age: stage,
+        deepDive: sharedSituation ? (allDeepDiveBySituation[sharedSituation.id] ?? fallbackDeepDive()) : generated.deepDive,
+        useSelectedChild,
+      });
+      setSelectedHelp('help-now');
+      setSelectedSituation(routedSituation.id);
+      setActiveNav('help');
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const target = contentRef.current ?? document.querySelector('.guidance-card') as HTMLElement | null;
+        if (!target) return;
+        const navOffset = window.innerWidth >= 701 ? 88 : 12;
+        window.scrollTo({ top: Math.max(0, target.getBoundingClientRect().top + window.scrollY - navOffset), left: 0, behavior: 'auto' });
+        target.focus({ preventScroll: true });
+      }));
+      return;
+    }
+
     const { guidance: rawGuidance, deepDive } = getJustTellMeGuidance(text);
-    const justTellMeTraits = isPremium ? (selectedHelpChild?.traits ?? []) : [];
-    const guidance = personalizeGuidance(rawGuidance, justTellMeTraits);
+    const multipleChildrenInQuestion = /\b(?:my kids|both (?:my )?(?:kids|children)|the kids|siblings?|brother|sister|toddler and (?:a )?baby|baby and (?:a )?toddler)\b/i.test(text);
+    const justTellMeTraits = isPremium && !multipleChildrenInQuestion ? (selectedHelpChild?.traits ?? []) : [];
+    const guidance = applyAboutChild(
+      personalizeGuidance(rawGuidance, justTellMeTraits),
+      isPremium && !multipleChildrenInQuestion ? selectedHelpChild?.aboutChild : undefined,
+    );
     setJustTellMeTitle(text);
     setJustTellMeResult(guidance);
     setJustTellMeDeepDive(deepDive);
     setJustTellMeDevResult(null);
     window.setTimeout(() => {
-      (entry === 'help' ? helpJustTellMeRef.current : justTellMeRef.current)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+      justTellMeResultRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
     }, 50);
+    } catch {
+      setJustTellMeError('Something went wrong while creating that answer. Your question is still here—please try again.');
+    } finally {
+      window.setTimeout(() => {
+        justTellMeSubmittingRef.current = false;
+        setJustTellMeLoading(false);
+      }, 0);
+    }
   };
 
   const saveJustTellMeResult = () => {
@@ -3474,8 +3986,9 @@ default:
   };
 
   const openSituation = (situationId: string) => {
-    if (!situationList.some((item) => item.id === situationId)) return;
+    if (!situationList.some((item) => item.id === situationId) && routedHelpResult?.situation.id !== situationId) return;
     pushNavHistory();
+    setRoutedHelpResult(null);
     setSelectedSituation(situationId);
     setActiveNav('help');
 
@@ -3483,10 +3996,7 @@ default:
     // never back at the top of the games/situation list. Critical SOS guidance
     // gets its own, especially prominent target.
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      const selector = situationId === 'losing-control-now'
-        ? '[data-breezier-days-sos-solution]'
-        : '[data-breezier-days-solution]';
-      const target = document.querySelector(selector) as HTMLElement | null;
+      const target = contentRef.current ?? document.querySelector('.guidance-card') as HTMLElement | null;
       if (target) {
         const navOffset = window.innerWidth >= 701 ? 88 : 12;
         const top = target.getBoundingClientRect().top + window.scrollY - navOffset;
@@ -3516,6 +4026,8 @@ default:
     if (helpId !== selectedHelp || selectedSituation !== null) pushNavHistory();
     setSelectedHelp(helpId);
     setSelectedSituation(null);
+    setRoutedHelpResult(null);
+    setRoutedHelpResult(null);
     setShowAll(false);
     setSelectedDevTopic(null);
     if (helpId !== 'activities') setActivitySelectionMessage('');
@@ -3734,15 +4246,7 @@ default:
     if (signature) remoteDataSignatureRef.current = signature;
 
     if (Array.isArray(remoteData.children)) {
-      const nextChildren = (remoteData.children as ChildProfile[]).map((child) => ({
-        ...child,
-        reminders: Array.isArray(child.reminders) ? child.reminders : [],
-        savedHelp: Array.isArray(child.savedHelp) ? child.savedHelp : [],
-        development: Array.isArray(child.development) ? child.development : [],
-        traits: Array.isArray(child.traits) ? child.traits : [],
-        aboutChild: child.aboutChild ?? { enjoys: '', whatWorks: '', workedBefore: '', makesHarder: '', anythingElse: '' },
-        pickyEating: child.pickyEating ?? { safeFoods: '', learningFoods: '', avoidTextures: '', mealtimeNotes: '' },
-      }));
+      const nextChildren = normalizeChildren(remoteData.children);
       setChildren(prev => getRemoteDataSignature(prev) === getRemoteDataSignature(nextChildren) ? prev : nextChildren);
     }
     if (Array.isArray(remoteData.savedIdeas)) {
@@ -4056,7 +4560,7 @@ default:
 
   const addChild = () => {
     if (!childName.trim() || !childAge) return;
-    const child: ChildProfile = { id: Date.now(), name: childName.trim(), age: childAge, notes: [], reminders: [], savedHelp: [], development: [], traits: [], aboutChild: { enjoys: '', whatWorks: '', workedBefore: '', makesHarder: '', anythingElse: '' }, dailyLog: { date: new Date().toISOString().slice(0, 10), wakeTime: '', napTime: '', meals: '', mood: '', potty: '', note: '' } };
+    const child: ChildProfile = { id: Date.now(), name: childName.trim(), age: childAge, notes: [], reminders: [], savedHelp: [], development: [], traits: [], aboutChild: emptyAboutChild(), dailyLog: { date: new Date().toISOString().slice(0, 10), wakeTime: '', napTime: '', meals: '', mood: '', potty: '', note: '' } };
     setChildren(current => [...current, child]);
     setSelectedChildId(child.id);
     setSelectedChildForHelp(child.id);
@@ -4111,7 +4615,7 @@ default:
     if (selectedChildId === null) return;
     setChildren(current => current.map(child =>
       child.id === selectedChildId
-        ? { ...child, aboutChild: { ...child.aboutChild, [field]: value } }
+        ? { ...child, aboutChild: { ...normalizeAboutChild(child.aboutChild), [field]: value } }
         : child
     ));
   };
@@ -4147,24 +4651,29 @@ default:
 
   const selectedHelpChild = children.find((child) => child.id === selectedChildForHelp) ?? null;
 
-  const effectiveGuidanceAge = selectedHelpChild
+  const effectiveGuidanceAge = routedHelpResult?.age ?? (selectedHelpChild
     ? getChildGuidanceAge(selectedHelpChild.age)
-    : selectedAge;
+    : selectedAge);
 
-  const childTraits = isPremium ? (selectedHelpChild?.traits ?? []) : [];
+  const childTraits = isPremium && (routedHelpResult?.useSelectedChild ?? true) ? (selectedHelpChild?.traits ?? []) : [];
   const rawGuidance = currentSituation?.guidance?.[effectiveGuidanceAge];
+  const immediateSleepOverride = currentSituation?.id === 'sleep-now' || currentSituation?.id === 'bedtime-now'
+    ? immediateSleepGuidance(effectiveGuidanceAge)
+    : currentSituation?.id === 'nap-now'
+    ? immediateSleepGuidance(effectiveGuidanceAge, true)
+    : null;
 
   // Always provide complete, usable guidance. Some older situations only have
   // part of the Guidance shape, so never render an empty advice block.
   const baseGuidance: Guidance | null = currentSituation ? {
     title: rawGuidance?.title?.trim() || currentSituation.title,
     emoji: rawGuidance?.emoji || currentSituation.emoji,
-    doNow: rawGuidance?.doNow?.trim() || 'Take the next safe, simple step and focus on what is happening right now.',
-    sayThis: rawGuidance?.sayThis?.trim() || 'We can take this one step at a time.',
+    doNow: immediateSleepOverride?.doNow?.trim() || rawGuidance?.doNow?.trim() || 'Take the next safe, simple step and focus on what is happening right now.',
+    sayThis: immediateSleepOverride?.sayThis?.trim() || rawGuidance?.sayThis?.trim() || 'We can take this one step at a time.',
     avoidThis: rawGuidance?.avoidThis?.trim() || 'Avoid trying to solve everything at once.',
-    afterward: rawGuidance?.afterward?.trim() || 'If the concern continues or you are unsure what to do, reach out to an appropriate healthcare or parenting professional.',
-    thenTry: rawGuidance?.thenTry?.trim() || undefined,
-    ifNotWorking: rawGuidance?.ifNotWorking?.trim() || undefined,
+    afterward: immediateSleepOverride?.afterward?.trim() || rawGuidance?.afterward?.trim() || 'If the concern continues or you are unsure what to do, reach out to an appropriate healthcare or parenting professional.',
+    thenTry: immediateSleepOverride?.thenTry?.trim() || rawGuidance?.thenTry?.trim() || undefined,
+    ifNotWorking: immediateSleepOverride?.ifNotWorking?.trim() || rawGuidance?.ifNotWorking?.trim() || undefined,
     keepBusy: rawGuidance?.keepBusy?.trim() || undefined,
     contactParent: rawGuidance?.contactParent?.trim() || undefined,
   } : null;
@@ -4172,15 +4681,19 @@ default:
   const currentGuidance: Guidance | null = baseGuidance
     ? applyAboutChild(
         applyCaregiverFeeling(personalizeGuidance(baseGuidance, childTraits), caregiverFeeling),
-        selectedHelpChild?.aboutChild,
+        isPremium && (routedHelpResult?.useSelectedChild ?? true) ? selectedHelpChild?.aboutChild : undefined,
       )
     : null;
   const currentDeepDive = currentSituation && currentGuidance
-    ? (allDeepDiveBySituation[currentSituation.id] ?? fallbackDeepDive())
+    ? (routedHelpResult?.situation.id === currentSituation.id
+        ? routedHelpResult.deepDive
+        : (allDeepDiveBySituation[currentSituation.id] ?? fallbackDeepDive()))
     : [];
 
   const currentPremiumHelp: PremiumHelpNow | null = currentSituation && currentGuidance
-    ? (allPremiumHelpNowBySituation[currentSituation.id] ?? null)
+    ? (isPremiumHelpNow(allPremiumHelpNowBySituation[currentSituation.id])
+        ? allPremiumHelpNowBySituation[currentSituation.id]
+        : null)
     : null;
 
   const isSleepOrNapSituation = currentSituation?.id === 'sleep-now' || currentSituation?.id === 'nap-now';
@@ -4781,82 +5294,44 @@ const getDayLabel = (offset: number): string => {
   ];
 
   const buildTakingOverPlan = () => {
-    const ageId = takingOverAge === 'multiple' ? 'toddler' : takingOverAge;
-    const situationMap: Record<string, string> = {
-      bored: 'bored-now',
-      fighting: 'kids-fighting',
-      meltdown: 'meltdown-now',
-      'burn-energy': 'burn-energy',
-      quiet: 'quiet-activity',
-      lunch: 'lunch-now',
-      snack: 'snack-now',
-      bedtime: 'bedtime-now',
-      leaving: 'leaving-now',
-      'baby-crying': 'baby-crying',
-      'wont-listen': 'wont-listen',
-      independent: 'independent-now',
-      'one-on-one': 'occupied-now',
-      'just-a-plan': 'next-hour',
-    };
-    const situationId = situationMap[takingOverSituation] || 'next-hour';
-    const situation = allHelpNowSituations.find(s => s.id === situationId);
-    const fallbackPrompt: Record<string, string> = {
-      bored: 'my child is bored',
-      fighting: 'my kids are fighting',
-      meltdown: 'my child is having a meltdown',
-      'burn-energy': 'my child needs to burn energy',
-      quiet: 'my child needs a quiet activity',
-      lunch: 'it is lunchtime and my child needs lunch',
-      snack: 'my child needs a snack',
-      bedtime: 'bedtime is falling apart',
-      leaving: 'we need to leave and my child will not cooperate',
-      'baby-crying': 'my baby is crying',
-      'wont-listen': 'my child will not listen',
-      independent: 'I need something my child can do independently',
-      'one-on-one': 'I want one-on-one time with my child',
-      'just-a-plan': 'I need a simple plan for the next hour',
-    };
-    // Some Taking Over choice IDs are presentation IDs rather than Help Now
-    // card IDs. Fall back through the same text router so every choice yields
-    // a practical plan instead of leaving the modal unchanged.
-    const guidance = situation?.guidance?.[ageId]
-      ?? getJustTellMeGuidance(`${ageId} ${fallbackPrompt[takingOverSituation] ?? fallbackPrompt['just-a-plan']}`).guidance;
     const child = selectedHelpChild;
-    const personalizedGuidance = isPremium
-      ? personalizeGuidance(guidance, child?.traits ?? [])
-      : guidance;
+    setTakingOverPlan(buildCaregiverPlan({
+      age: takingOverAge,
+      time: takingOverTime,
+      situation: takingOverSituation,
+      energy: takingOverEnergy,
+      childName: child?.name,
+      traits: isPremium ? child?.traits : [],
+      whatWorks: isPremium ? child?.aboutChild.whatWorks : undefined,
+      enjoys: isPremium ? child?.aboutChild.enjoys : undefined,
+    }));
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      takingOverResultRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }));
+  };
 
-    const timeLabel = takingOverTime === 'all' ? 'the whole afternoon' : takingOverTime;
-    const energyPrefix = takingOverEnergy === 'exhausted'
-      ? 'You are exhausted. Keep it simple and low-energy. '
-      : takingOverEnergy === 'some'
-      ? 'You have some energy. A mix of calm and active works well. '
-      : 'You have energy. Make the most of it. ';
+  const sendPasswordReset = async () => {
+    const email = premiumAuthEmail.trim();
+    if (!email) { setPremiumAuthMessage('Enter your email address first.'); return; }
+    setCheckoutLoading(true);
+    setPremiumAuthMessage(null);
+    const error = await requestPasswordReset(email);
+    setCheckoutLoading(false);
+    setPremiumAuthMessage(error ?? 'Check your email for a secure password-reset link.');
+  };
 
-    setTakingOverPlan({
-      rightNow: `${energyPrefix}${personalizedGuidance.doNow}`,
-      next: personalizedGuidance.thenTry || personalizedGuidance.afterward || 'Follow the family routine and keep the next transition in mind.',
-      ifNotWorking: personalizedGuidance.ifNotWorking || 'If things are not working, check hunger, tiredness, or overstimulation. A snack, a change of scenery, or a quiet break can help.',
-      keepBusy: personalizedGuidance.keepBusy || 'Set up a simple activity station with a few safe toys or materials within view.',
-      nextTransition: `Plan for ${timeLabel}. Watch for the next natural transition: meal, nap, rest, or leaving. Give a 5-minute warning before any change.`,
-      ...(isPremium ? {
-        premium: {
-          doThisFirst: `${energyPrefix}${personalizedGuidance.doNow}`,
-          whatToSay: personalizedGuidance.sayThis,
-          next10To15: [
-            personalizedGuidance.thenTry || 'Stay close and keep the next step small. Use one calm direction at a time.',
-            personalizedGuidance.keepBusy || 'Offer one simple, safe activity or job that fits this moment.',
-            'Use this sequence for the next 10–15 minutes, then move to the next routine step.',
-          ],
-          planB: personalizedGuidance.ifNotWorking || 'Pause and check for hunger, tiredness, pain, or too much stimulation. Reduce the demand, change the setting, or take a short quiet reset before trying again.',
-          avoid: personalizedGuidance.avoidThis,
-          laterToday: personalizedGuidance.afterward,
-          childNote: child
-            ? `Personalized for ${child.name}${child.traits?.length ? ` · ${child.traits.join(', ')}` : ''}`
-            : undefined,
-        },
-      } : {}),
-    });
+  const saveNewPremiumPassword = async () => {
+    if (newPremiumPassword.length < 8) { setPremiumAuthMessage('Use at least 8 characters for your new password.'); return; }
+    setCheckoutLoading(true);
+    setPremiumAuthMessage(null);
+    const error = await updatePremiumPassword(newPremiumPassword);
+    setCheckoutLoading(false);
+    if (error) { setPremiumAuthMessage(error); return; }
+    setNewPremiumPassword('');
+    setPasswordRecovery(false);
+    setPremiumAuthMessage('Password updated. You are signed in, and your Premium access is unchanged.');
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    void refreshPremiumStatus();
   };
 
   const homeResetAreas: { id: string; label: string; emoji: string }[] = [
@@ -5454,25 +5929,38 @@ const getDayLabel = (offset: number): string => {
       title: 'Privacy Policy',
       body: (
         <>
-          <p><strong>Last updated: August 26, 2026</strong></p>
+          <p><strong>Last updated: September 4, 2026</strong></p>
           <p>
             Breezier Days is designed for adults who are parents or caregivers. It is not directed
             to children, does not provide child accounts, and should be used by an adult.
           </p>
-          <h3>Information stored by the current app</h3>
+          <h3>Information the current app handles</h3>
           <p>
-            Breezier Days stores child profile information, notes, saved ideas,
-            development activities, and parenting tools in browser storage on your device. The app
-            does not include an analytics SDK, advertising SDK, or third-party database connection
-            for these fields. Payment processing is handled securely by Stripe.
+            Breezier Days stores child names and ages; temperament, interests, and profile details;
+            notes about what works or makes situations harder; saved ideas and answers; development
+            activities; and parenting-tool settings in browser storage on your device. Free-text
+            questions are processed in the browser and are not sent to an AI service. A question can
+            remain in browser storage when you intentionally save the resulting answer.
+          </p>
+          <p>
+            If you create or use a Premium account, Supabase processes your email address,
+            authentication/session information, and password-recovery requests. Breezier Days stores
+            the account-to-billing-customer mapping and Premium entitlement status in Supabase. Stripe
+            processes checkout, payment, subscription, renewal, and cancellation information. Breezier
+            Days does not receive or store your full payment-card number.
+          </p>
+          <p>
+            Weather-Smart Activities sends device coordinates, when you grant location permission, or
+            a location you type to Open-Meteo to retrieve location and weather data. The current app
+            does not include an analytics or advertising SDK.
           </p>
           <p>
             Because the app runs as a website, the hosting provider and browser may still process
             ordinary technical information needed to deliver the site, such as network requests,
             IP addresses, device/browser information, or security logs. Review the final hosting
-            provider's privacy practices before launch and update this policy if the production
-            architecture adds analytics, accounts, cloud storage, payments, advertising, or other
-            third-party services.
+            provider's privacy practices before launch. Netlify hosts the site and runs the billing
+            endpoints, and may process ordinary request, device, IP-address, security, and function-log
+            information needed to provide and protect the service.
           </p>
           <h3>Children's information</h3>
           <p>
@@ -5494,20 +5982,27 @@ const getDayLabel = (offset: number): string => {
             Breezier Days uses locally stored information to provide the features you
             request, such as personalized guidance, saved ideas, development tracking, and parenting tools.
             Breezier Days does not sell or share these stored child-profile fields for
-            advertising. Any future use of analytics, advertising, cloud storage, or other
-            third-party services will be disclosed before those services are enabled.
+            advertising. If analytics is added later, it should be limited to event-level information
+            such as page visits, feature use, errors, and subscription conversion. Child names, raw
+            parenting questions, profile or temperament details, notes, and saved answers should not be
+            placed in analytics events. Any future analytics or advertising use must be disclosed before
+            it is enabled.
           </p>
           <h3>Deletion</h3>
           <p>
             You can delete child data from the app, and the current deletion control removes the
             child-profile data stored by Breezier Days in this browser. You can also clear this site's
-            browser storage. Saved Ideas are stored separately and can be managed in the app.
+            browser storage. Saved Ideas are stored separately and can be managed in the app. This local
+            deletion does not delete a Supabase authentication account, Supabase billing records, or
+            Stripe subscription and transaction records. The current app does not yet provide a
+            self-service account-deletion request. Account and server-data deletion requests are
+            handled through the verified support process described in “Delete My Data.”
           </p>
           <p className="legal-note">
             This policy is for informational purposes and is not legal advice. Have a
             qualified privacy attorney review the final privacy policy and data map for the states
-            and countries where Breezier Days is offered, especially if the service adds
-            accounts, cloud storage, analytics, advertising, payments, or direct collection from children.
+            and countries where Breezier Days is offered, including retention, deletion, children's
+            privacy, subscription, and service-provider disclosures.
           </p>
         </>
       )
@@ -5592,6 +6087,19 @@ const getDayLabel = (offset: number): string => {
             controls. You can also clear this site's browser storage. Breezier Days does not
             maintain a separate server-side child profile database.
           </p>
+          <p>
+            <strong>Premium account deletion:</strong> The local deletion button cannot delete a Supabase
+            authentication account or billing records, and deleting local data does not cancel a
+            subscription. First manage or cancel an active subscription through the Stripe customer
+            portal. Then send an account-deletion request from the email address used for your Premium
+            account. Support will verify the request before deleting the Supabase authentication account
+            and Breezier Days billing mappings and entitlements.
+          </p>
+          {supportEmail ? (
+            <p><a href={supportMailto('Breezier Days account and data deletion request', 'Please verify and delete my Breezier Days account and server-side user data. My Premium account email is: ')}>{supportEmail}</a></p>
+          ) : (
+            <p className="legal-note"><strong>Launch setup required:</strong> Configure <code>VITE_SUPPORT_EMAIL</code> with the real Breezier Days support address.</p>
+          )}
           <button
             type="button"
             className="legal-danger-button"
@@ -5623,8 +6131,10 @@ const getDayLabel = (offset: number): string => {
           </button>
           <p className="legal-note">
             This deletes the locally stored child data and Saved Ideas from this
-            browser. It does not delete information that may be stored on a server
-            or with third-party services.
+            browser. Verified account deletion removes the Breezier Days authentication account,
+            customer mapping, and entitlement rows, but Stripe transaction records, provider security
+            logs, and backup copies may remain where operationally or legally required. It does not mean
+            every record held by every service is immediately or permanently erased.
           </p>
         </>
       )
@@ -5640,9 +6150,9 @@ const getDayLabel = (offset: number): string => {
           <p><strong>Payment:</strong> Payment is processed securely by Stripe. You can pay by card through Stripe's secure checkout. Your card information is never stored by Breezier Days.</p>
           <p><strong>Renewal:</strong> Your subscription automatically renews each month unless you cancel before the renewal date.</p>
           <p><strong>Cancellation:</strong> You can cancel at any time by tapping the ✦ Premium badge at the top of the page, then tapping "Manage Subscription" or "Cancel Premium." After cancellation, you will keep access to Premium features until the end of your current billing period.</p>
-          <p><strong>Refunds:</strong> Refunds are handled on a case-by-case basis. If you believe you were charged in error, contact us through the app's help or feedback option.</p>
+          <p><strong>Refunds:</strong> Payments are generally non-refundable, including for partial billing periods, except where required by law or expressly approved.</p>
           <p><strong>Changes to Premium:</strong> We may update Premium features over time. We will notify you of any material changes to the service or pricing before they take effect.</p>
-          <p><strong>Contact:</strong> If you have questions about Premium or your subscription, reach out through the app's help or feedback option.</p>
+          <p><strong>Support:</strong> {supportEmail ? <a href={supportMailto('Breezier Days support request')}>{supportEmail}</a> : <>Configure <code>VITE_SUPPORT_EMAIL</code> before launch.</>}</p>
           <p className="legal-note" style={{ marginTop: 16 }}>
             This information is provided for transparency. Breezier Days Premium is billed monthly via Stripe.
           </p>
@@ -5691,6 +6201,15 @@ const getDayLabel = (offset: number): string => {
               <div className="premium-cta-area">
                 {!premiumAuthReady ? (
                   <p style={{ color: '#68716a' }}>Checking your Premium account…</p>
+                ) : passwordRecovery ? (
+                  <div style={{ padding: 16, borderRadius: 16, background: '#f7f3ec', textAlign: 'left' }}>
+                    <strong style={{ color: '#26342c' }}>Choose a new password</strong>
+                    <p style={{ margin: '7px 0 12px', color: '#68716a', fontSize: 13, lineHeight: 1.5 }}>Your account and Premium entitlement stay connected to the same user.</p>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>New password</label>
+                    <input type="password" autoComplete="new-password" value={newPremiumPassword} onChange={e => setNewPremiumPassword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void saveNewPremiumPassword(); }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', borderRadius: 10, border: '1px solid rgba(73,100,85,.18)' }} />
+                    <button type="button" className="premium-activate-button" onClick={() => void saveNewPremiumPassword()} disabled={checkoutLoading} style={{ width: '100%', marginTop: 12 }}>{checkoutLoading ? 'Updating…' : 'Update password'}</button>
+                    {premiumAuthMessage && <p role="status" style={{ color: premiumAuthMessage.startsWith('Password updated') ? '#496455' : '#c0392b', fontSize: 13, margin: '9px 0 0', fontWeight: 600 }}>{premiumAuthMessage}</p>}
+                  </div>
                 ) : !premiumUser ? (
                   <div style={{ padding: 16, borderRadius: 16, background: '#f7f3ec', textAlign: 'left' }}>
                     <strong style={{ color: '#26342c' }}>Create an account or sign in to continue</strong>
@@ -5708,6 +6227,13 @@ const getDayLabel = (offset: number): string => {
                     <button type="button" className="premium-maybe-later" onClick={() => { setPremiumAuthMode(mode => mode === 'sign-in' ? 'sign-up' : 'sign-in'); setPremiumAuthMessage(null); }}>
                       {premiumAuthMode === 'sign-in' ? 'New here? Create an account' : 'Already have an account? Sign in'}
                     </button>
+                    {premiumAuthMode === 'sign-in' && <button type="button" className="premium-maybe-later" onClick={() => void sendPasswordReset()} disabled={checkoutLoading}>Forgot Password?</button>}
+                    <p style={{ margin: '9px 0 0', textAlign: 'center', color: '#68716a', fontSize: 11, lineHeight: 1.5 }}>
+                      {premiumAuthMode === 'sign-up' ? 'By creating an account, you agree to the ' : 'Review the '}
+                      <button type="button" onClick={() => { setShowPremiumModal(false); pushNavHistory(); setLegalPage('terms'); }} style={{ border: 0, padding: 0, background: 'transparent', color: '#496455', textDecoration: 'underline', cursor: 'pointer', fontSize: 11 }}>Terms of Use</button>
+                      {' and '}
+                      <button type="button" onClick={() => { setShowPremiumModal(false); pushNavHistory(); setLegalPage('privacy'); }} style={{ border: 0, padding: 0, background: 'transparent', color: '#496455', textDecoration: 'underline', cursor: 'pointer', fontSize: 11 }}>Privacy Policy</button>.
+                    </p>
                   </div>
                 ) : isPremium && !premiumModalFeature ? (
                   <div className="premium-member-panel">
@@ -6154,7 +6680,7 @@ const getDayLabel = (offset: number): string => {
               </p>
               <div style={{ background: '#f7f3ec', borderRadius: 14, padding: '14px 16px', marginBottom: 16, textAlign: 'left' }}>
                 <p style={{ fontSize: 13, color: 'rgba(32,52,81,0.65)', margin: 0, lineHeight: 1.5 }}>
-                  Your subscription is linked to this device. You can cancel anytime by tapping the ✦ Premium badge at the top of the page, then tapping "Manage Subscription" or "Cancel Premium."
+                  Your subscription is linked to your Premium email account. You can cancel anytime by tapping the ✦ Premium badge at the top of the page, then tapping "Manage Subscription."
                 </p>
               </div>
               <div style={{ background: '#fff5f0', borderRadius: 14, padding: '12px 16px', marginBottom: 16, textAlign: 'left', border: '1px solid rgba(233,120,145,0.15)' }}>
@@ -9582,7 +10108,7 @@ const getDayLabel = (offset: number): string => {
                   {([['baby','Baby'],['toddler','Toddler'],['preschool','Preschooler'],['bigkid','School Age'],['tween','Tween (9–12)'],['multiple','Multiple kids']] as const).map(([val, label]) => (
                     <button key={val} type="button"
                       className={`taking-over-choice ${takingOverAge === val ? 'selected' : ''}`}
-                      onClick={() => setTakingOverAge(val)}
+                      onClick={() => { setTakingOverAge(val); setTakingOverPlan(null); }}
                     >{label}</button>
                   ))}
                 </div>
@@ -9594,7 +10120,7 @@ const getDayLabel = (offset: number): string => {
                   {['5 min','10 min','30 min','1 hour','A few hours','All afternoon'].map(t => (
                     <button key={t} type="button"
                       className={`taking-over-choice ${takingOverTime === t ? 'selected' : ''}`}
-                      onClick={() => setTakingOverTime(t)}
+                      onClick={() => { setTakingOverTime(t); setTakingOverPlan(null); }}
                     >{t}</button>
                   ))}
                 </div>
@@ -9606,7 +10132,7 @@ const getDayLabel = (offset: number): string => {
                   {takingOverSituations.map(s => (
                     <button key={s.id} type="button"
                       className={`taking-over-choice ${takingOverSituation === s.id ? 'selected' : ''}`}
-                      onClick={() => setTakingOverSituation(s.id)}
+                      onClick={() => { setTakingOverSituation(s.id); setTakingOverPlan(null); }}
                     >{s.label}</button>
                   ))}
                 </div>
@@ -9618,7 +10144,7 @@ const getDayLabel = (offset: number): string => {
                   {([['high','I have energy'],['some','I have some energy'],['exhausted',"I'm exhausted"]] as const).map(([val, label]) => (
                     <button key={val} type="button"
                       className={`taking-over-choice ${takingOverEnergy === val ? 'selected' : ''}`}
-                      onClick={() => setTakingOverEnergy(val)}
+                      onClick={() => { setTakingOverEnergy(val); setTakingOverPlan(null); }}
                     >{label}</button>
                   ))}
                 </div>
@@ -9629,24 +10155,19 @@ const getDayLabel = (offset: number): string => {
               >Give me a plan</button>
 
               {takingOverPlan && (
-                <div className="taking-over-result">
-                  {isPremium && takingOverPlan.premium ? (
-                    <>
-                      <p className="eyebrow" style={{ margin: '0 0 10px', color: '#496455' }}>✦ PREMIUM CAREGIVER PLAN</p>
-                      {takingOverPlan.premium.childNote && <p style={{ margin: '0 0 14px', color: '#68716a', fontSize: 13 }}>{takingOverPlan.premium.childNote}</p>}
-                      <div className="taking-over-step"><div className="taking-over-step-label">DO THIS FIRST</div><p>{takingOverPlan.premium.doThisFirst}</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">WHAT TO SAY</div><p className="quote">“{takingOverPlan.premium.whatToSay}”</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">NEXT 10–15 MINUTES</div><ol style={{ margin: '0', paddingLeft: 20, color: '#68716a', lineHeight: 1.55 }}>{takingOverPlan.premium.next10To15.map((step, index) => <li key={index}>{step}</li>)}</ol></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">IF THAT DOESN'T WORK</div><p>{takingOverPlan.premium.planB}</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">WHAT TO AVOID RIGHT NOW</div><p>{takingOverPlan.premium.avoid}</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">LATER TODAY</div><p>{takingOverPlan.premium.laterToday}</p></div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="taking-over-step"><div className="taking-over-step-label">RIGHT NOW</div><p>{takingOverPlan.rightNow}</p></div>
-                      <div className="taking-over-step"><div className="taking-over-step-label">NEXT</div><p>{takingOverPlan.next}</p></div>
-                    </>
-                  )}
+                <div className="taking-over-result" ref={takingOverResultRef} tabIndex={-1}>
+                  <p className="eyebrow" style={{ margin: '0 0 6px', color: '#496455' }}>{isPremium ? '✦ PREMIUM CAREGIVER PLAN' : 'CAREGIVER PLAN'}</p>
+                  <h3 style={{ margin: '0 0 4px' }}>{takingOverPlan.title}</h3>
+                  <p style={{ margin: '0 0 12px', color: '#68716a', fontSize: 13 }}>{takingOverPlan.context}</p>
+                  {takingOverPlan.childNote && <p style={{ margin: '0 0 14px', color: '#68716a', fontSize: 13 }}>{takingOverPlan.childNote}</p>}
+                  <div className="taking-over-step"><div className="taking-over-step-label">DO THIS FIRST</div><p>{takingOverPlan.doThisFirst}</p></div>
+                  <div className="taking-over-step"><div className="taking-over-step-label">WHAT TO SAY</div><p className="quote">“{takingOverPlan.whatToSay}”</p></div>
+                  <div className="taking-over-step"><div className="taking-over-step-label">{takingOverPlan.timelineLabel}</div><ol style={{ margin: '0', paddingLeft: 20, color: '#68716a', lineHeight: 1.55 }}>{takingOverPlan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol></div>
+                  {isPremium && <>
+                    <div className="taking-over-step"><div className="taking-over-step-label">IF THAT DOESN'T WORK</div><p>{takingOverPlan.planB}</p></div>
+                    <div className="taking-over-step"><div className="taking-over-step-label">WHAT TO AVOID RIGHT NOW</div><p>{takingOverPlan.avoid}</p></div>
+                    <div className="taking-over-step"><div className="taking-over-step-label">AT THE END</div><p>{takingOverPlan.finish}</p></div>
+                  </>}
                 </div>
               )}
 
@@ -9661,7 +10182,7 @@ const getDayLabel = (offset: number): string => {
                       title: 'Taking Over Plan',
                       category: 'Caregiver Help',
                       emoji: '👨‍👩‍👧',
-                      description: takingOverPlan.rightNow,
+                      description: takingOverPlan.doThisFirst,
                       meta: `Taking Over · ${takingOverTime} · ${takingOverSituation}`,
                     });
                   }}
@@ -9943,10 +10464,11 @@ const getDayLabel = (offset: number): string => {
                   placeholder="Example: My toddler is melting down and I need to make dinner."
                   rows={3}
                 />
-                <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('home')} disabled={!justTellMeText.trim()}>
-                  ✨ Tell me what to do
+                <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('home')} disabled={!justTellMeText.trim() || justTellMeLoading} aria-busy={justTellMeLoading}>
+                  {justTellMeLoading ? 'Finding the next step…' : '✨ Tell me what to do'}
                 </button>
               </div>
+              {justTellMeError && <p role="alert" className="form-error">{justTellMeError}</p>}
 
               <div className="just-tell-me-examples">
                 <button type="button" onClick={() => setJustTellMeText('My toddler is melting down and I need to make dinner.')}>"Toddler meltdown + dinner"</button>
@@ -9958,7 +10480,7 @@ const getDayLabel = (offset: number): string => {
               </div>
 
               {justTellMeEntry === 'home' && justTellMeResult && (
-                <section className="just-tell-me-result">
+                <section className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1}>
                   <p className="eyebrow">HERE'S YOUR NEXT STEP</p>
                   <div className="just-tell-me-result-title">
                     <span>{justTellMeResult.emoji}</span>
@@ -11851,13 +12373,13 @@ const getDayLabel = (offset: number): string => {
                 <>
                   <div className="weather-info-bar">
                     <span className="weather-info-emoji">
-                      {weatherCodeToCategory(weatherData.code, weatherData.temp) === 'rain' ? '🌧️'
-                        : weatherCodeToCategory(weatherData.code, weatherData.temp) === 'cold' ? '❄️'
-                        : weatherCodeToCategory(weatherData.code, weatherData.temp) === 'hot' ? '☀️'
+                      {weatherCodeToCategory(weatherData.code, weatherData.temp, weatherData.unit) === 'rain' ? '🌧️'
+                        : weatherCodeToCategory(weatherData.code, weatherData.temp, weatherData.unit) === 'cold' ? '❄️'
+                        : weatherCodeToCategory(weatherData.code, weatherData.temp, weatherData.unit) === 'hot' ? '☀️'
                         : '🌤️'}
                     </span>
                     <div>
-                      <strong>{weatherData.description} · {weatherData.temp}°C</strong>
+                      <strong>{weatherData.description} · {weatherData.temp}{weatherUnitSymbol(weatherData.unit)}</strong>
                       <small>{weatherData.locationName}</small>
                     </div>
                     <button type="button" className="weather-refresh-button" onClick={requestWeatherLocation} title="Refresh weather">↻</button>
@@ -12045,7 +12567,7 @@ const getDayLabel = (offset: number): string => {
                   <p className="eyebrow">{isParentingStageOnly ? (selectedStage === 'expecting' ? 'EXPECTING PARENT' : 'NEW PARENT') : currentAge?.label.toUpperCase()}</p>
                   <h2>Development and Milestones</h2>
                   <p>Real, age-specific answers about how your child is growing and learning — not just "every child develops differently."</p>
-                  {selectedHelpChild && (
+                  {selectedHelpChild && (routedHelpResult?.useSelectedChild ?? true) && (
                     <div className="helping-child-chip">
                       👧 Helping <strong>{selectedHelpChild.name}</strong> · {selectedHelpChild.age}
                       <button type="button" onClick={() => setSelectedChildForHelp(null)}>Change</button>
@@ -12340,13 +12862,14 @@ const getDayLabel = (offset: number): string => {
                       placeholder="Example: My toddler is melting down and I need to make dinner."
                       rows={3}
                     />
-                    <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('help')} disabled={!justTellMeText.trim()}>
-                      ✨ Tell me what to do
+                    <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('help')} disabled={!justTellMeText.trim() || justTellMeLoading} aria-busy={justTellMeLoading}>
+                      {justTellMeLoading ? 'Finding the next step…' : '✨ Tell me what to do'}
                     </button>
                   </div>
+                  {justTellMeError && <p role="alert" className="form-error">{justTellMeError}</p>}
                   <p style={{ margin: '10px 0 0', color: '#68716a', fontSize: 12 }}>One sentence is enough. No need to explain everything.</p>
                   {justTellMeEntry === 'help' && justTellMeResult && (
-                    <section className="just-tell-me-result" style={{ marginTop: 20 }}>
+                    <section className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1} style={{ marginTop: 20 }}>
                       <p className="eyebrow">HERE'S YOUR NEXT STEP</p>
                       <div className="just-tell-me-result-title"><span>{justTellMeResult.emoji}</span><div><h3>{justTellMeResult.title}</h3><small>Based on: {justTellMeTitle}</small></div></div>
                       <div className="just-tell-me-result-grid">
@@ -12358,7 +12881,7 @@ const getDayLabel = (offset: number): string => {
                     </section>
                   )}
                   {justTellMeEntry === 'help' && justTellMeDevResult && (
-                    <section className="just-tell-me-result" style={{ marginTop: 20 }}>
+                    <section className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1} style={{ marginTop: 20 }}>
                       <p className="eyebrow">HERE'S YOUR DEVELOPMENT ANSWER</p>
                       <div className="just-tell-me-result-title"><span>{justTellMeDevResult.emoji}</span><div><h3>{justTellMeDevResult.title}</h3><small>Based on: {justTellMeTitle}</small></div></div>
                       <div className="just-tell-me-result-grid"><div><strong>WHAT'S COMMON AT THIS AGE</strong><p>{justTellMeDevResult.common}</p></div></div>
@@ -12607,7 +13130,7 @@ const getDayLabel = (offset: number): string => {
                   )}
 
                   {(() => {
-                    const a = selectedHelpChild.aboutChild;
+                    const a = normalizeAboutChild(selectedHelpChild.aboutChild);
                     const filled = (Object.entries(a) as [string, string][])
                       .filter(([, v]) => v.trim());
                     if (!filled.length) return null;
@@ -12753,7 +13276,7 @@ const getDayLabel = (offset: number): string => {
               )}
             </section>
           ) : (
-            <section ref={contentRef} className="guidance-card">
+            <section ref={contentRef} className="guidance-card" tabIndex={-1}>
               <button type="button"
                 className="back-button"
                 onClick={goBack}
@@ -12764,7 +13287,7 @@ const getDayLabel = (offset: number): string => {
               <div className="guidance-title">
                 <div className="topic-icon">{currentSituation?.emoji}</div>
                 <div>
-                  <p className="eyebrow">{currentAge?.label.toUpperCase()}</p>
+                  <p className="eyebrow">{ageGroups.find((age) => age.id === effectiveGuidanceAge)?.label.toUpperCase()}</p>
                   <h2>{currentGuidance?.title}</h2>
 
                   {currentGuidance && isPremium && (
@@ -12774,7 +13297,7 @@ const getDayLabel = (offset: number): string => {
                     <button type="button" className="save-help-button save-help-locked" onClick={() => unlockPremium('unlimited-saved')}>🔒 Save this answer with Premium</button>
                   )}
 
-                  {selectedHelpChild && (
+                  {selectedHelpChild && (routedHelpResult?.useSelectedChild ?? true) && (
                     <p className="personalized-guidance-label">
                       Personalized for {selectedHelpChild.name} · {selectedHelpChild.age}{childTraits.length > 0 ? ' · temperament-aware' : ''} — age-appropriate guidance is selected automatically
                     </p>
@@ -12800,8 +13323,8 @@ const getDayLabel = (offset: number): string => {
                     );
                   })()}
 
-                  {selectedHelp === 'help-now' && selectedHelpChild && (() => {
-                    const a = selectedHelpChild.aboutChild;
+                  {selectedHelp === 'help-now' && selectedHelpChild && (routedHelpResult?.useSelectedChild ?? true) && (() => {
+                    const a = normalizeAboutChild(selectedHelpChild.aboutChild);
                     const filled = (Object.entries(a) as [string, string][])
                       .filter(([, v]) => v.trim());
                     if (!filled.length) return null;
@@ -13931,6 +14454,7 @@ const getDayLabel = (offset: number): string => {
             <button type="button" onClick={() => { pushNavHistory(); setLegalPage('health') }}>Health Disclaimer</button>
             <button type="button" onClick={() => { pushNavHistory(); setLegalPage('delete') }}>Delete My Data</button>
             <button type="button" onClick={() => { pushNavHistory(); setLegalPage('subscription') }}>Subscription Info</button>
+            {supportEmail && <a href={supportMailto('Breezier Days support request')} style={{ color: 'inherit', fontSize: 12 }}>Contact Support</a>}
           </div>
 
           <div className="sync-section">

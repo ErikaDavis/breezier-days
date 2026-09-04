@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { supportMessage } from './supportConfig';
 
 export type PremiumUser = { id: string; email: string | null };
 
@@ -26,26 +27,39 @@ export async function getPremiumUser(): Promise<PremiumUser | null> {
   return toPremiumUser(user);
 }
 
-export function onPremiumAuthChange(listener: (user: PremiumUser | null) => void) {
+export function onPremiumAuthChange(listener: (user: PremiumUser | null, event: string) => void) {
   if (!supabase) return () => {};
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => listener(toPremiumUser(session?.user ?? null)));
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => listener(toPremiumUser(session?.user ?? null), event));
   return () => subscription.unsubscribe();
 }
 
+export async function requestPasswordReset(email: string): Promise<string | null> {
+  if (!supabase) return `Premium is not configured. ${supportMessage}`;
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  return error?.message ?? null;
+}
+
+export async function updatePremiumPassword(password: string): Promise<string | null> {
+  if (!supabase) return `Premium is not configured. ${supportMessage}`;
+  const { error } = await supabase.auth.updateUser({ password });
+  return error?.message ?? null;
+}
+
 export async function signInToPremium(email: string, password: string): Promise<{ user: PremiumUser | null; error: string | null }> {
-  if (!supabase) return { user: null, error: 'Premium is not configured. Please contact support.' };
+  if (!supabase) return { user: null, error: `Premium is not configured. ${supportMessage}` };
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   return { user: toPremiumUser(data.user), error: error?.message ?? null };
 }
 
 export async function createPremiumAccount(email: string, password: string): Promise<{ user: PremiumUser | null; confirmationRequired: boolean; error: string | null }> {
-  if (!supabase) return { user: null, confirmationRequired: false, error: 'Premium is not configured. Please contact support.' };
+  if (!supabase) return { user: null, confirmationRequired: false, error: `Premium is not configured. ${supportMessage}` };
   const { data, error } = await supabase.auth.signUp({ email, password });
   return { user: toPremiumUser(data.user), confirmationRequired: !data.session && !error, error: error?.message ?? null };
 }
 
 async function accessToken(): Promise<string> {
-  if (!supabase) throw new Error('Premium is not configured. Please contact support.');
+  if (!supabase) throw new Error(`Premium is not configured. ${supportMessage}`);
   const { data: { session } } = await supabase.auth.getSession();
   if (!session || !toPremiumUser(session.user)) throw new Error('Please sign in to your Premium account first.');
   return session.access_token;
