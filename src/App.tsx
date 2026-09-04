@@ -2018,8 +2018,57 @@ function App() {
       document.title = 'Breezier Days — practical help for everyday family life';
     } catch {}
   }, []);
+
+  // Capture the browser's native PWA install prompt when available. iPhone/iPad
+  // Safari does not expose this event, so the button falls back to simple
+  // Share > Add to Home Screen instructions there.
+  useEffect(() => {
+    const updateStandaloneState = () => {
+      const navigatorStandalone = Boolean((window.navigator as any).standalone);
+      const displayModeStandalone = window.matchMedia?.('(display-mode: standalone)').matches ?? false;
+      setIsStandaloneApp(navigatorStandalone || displayModeStandalone);
+    };
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredInstallPrompt(event as any);
+    };
+    const onAppInstalled = () => {
+      setDeferredInstallPrompt(null);
+      setIsStandaloneApp(true);
+      setShowInstallHelp(false);
+    };
+    updateStandaloneState();
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt as EventListener);
+    window.addEventListener('appinstalled', onAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt as EventListener);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  const openInstallExperience = async () => {
+    if (isStandaloneApp) {
+      setShowInstallHelp(true);
+      return;
+    }
+    if (deferredInstallPrompt) {
+      try {
+        await deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        setDeferredInstallPrompt(null);
+        return;
+      } catch {
+        // If the native prompt cannot open, show browser-specific instructions.
+      }
+    }
+    setShowInstallHelp(true);
+  };
+
   const { identity, schedulePush, syncState, syncError, syncPasscode, setSyncPasscode, clearSyncPasscode, remoteData } = useCloudSync();
   const [legalPage, setLegalPage] = useState<'privacy' | 'terms' | 'health' | 'delete' | 'subscription' | null>(null);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [isStandaloneApp, setIsStandaloneApp] = useState(false);
   const [selectedChildForHelp, setSelectedChildForHelp] = useState<number | null>(() => {
     try {
       const saved = window.localStorage.getItem('littlewise-selected-child');
@@ -2360,12 +2409,18 @@ function App() {
   };
 
   const openChildForm = () => {
-    const profileSection = toolsRef.current;
-    if (profileSection) {
-      const targetY = window.scrollY + profileSection.getBoundingClientRect().top - 16;
-      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
-    }
     if (!showChildForm) setShowChildForm(true);
+    // Wait until the form actually exists in the DOM, then land directly on it.
+    // This keeps every Add Child entry point working, including the top/home buttons.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const target = childFormRef.current ?? toolsRef.current;
+      if (!target) return;
+      const navOffset = window.innerWidth >= 701 ? 96 : 16;
+      const top = target.getBoundingClientRect().top + window.scrollY - navOffset;
+      window.scrollTo({ top: Math.max(0, top), left: 0, behavior: 'smooth' });
+      const firstField = childFormRef.current?.querySelector('input') as HTMLInputElement | null;
+      firstField?.focus({ preventScroll: true });
+    }));
   };
 
   const littleWinPool: { text: string; emoji: string }[] = [
@@ -6959,6 +7014,49 @@ const getDayLabel = (offset: number): string => {
         border: 1px solid rgba(233,120,145,0.15);
         background: #fff5f7;
       }
+
+      .footer-action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        width: min(680px, 100%);
+        margin: 4px auto 20px;
+      }
+      .footer-action-card {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid rgba(73,100,85,.16);
+        background: #f7f3ec;
+        color: #26342c;
+        border-radius: 16px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        text-align: left;
+        text-decoration: none;
+        font: inherit;
+        cursor: pointer;
+        box-sizing: border-box;
+        width: 100%;
+      }
+      .footer-action-card:hover { background: #f0f5ef; }
+      .footer-action-icon { font-size: 24px; flex: 0 0 auto; }
+      .footer-action-card strong, .footer-action-card small { display: block; }
+      .footer-action-card strong { font-size: 14px; line-height: 1.25; }
+      .footer-action-card small { margin-top: 3px; color: #68716a; font-size: 11px; line-height: 1.35; font-weight: 600; }
+      .install-help-backdrop { position: fixed; inset: 0; z-index: 5000; background: rgba(25,34,29,.52); display: flex; align-items: center; justify-content: center; padding: 18px; }
+      .install-help-modal { position: relative; width: min(520px, 100%); max-height: calc(100vh - 36px); overflow-y: auto; box-sizing: border-box; background: #fff; border-radius: 24px; padding: 26px; box-shadow: 0 20px 70px rgba(0,0,0,.22); text-align: left; color: #26342c; }
+      .install-help-close { position: absolute; top: 10px; right: 12px; border: 0; background: transparent; font-size: 30px; line-height: 1; cursor: pointer; color: #68716a; }
+      .install-help-icon { font-size: 36px; }
+      .install-help-modal h2 { margin: 8px 36px 10px 0; font-size: 24px; }
+      .install-help-modal > p { color: #68716a; line-height: 1.55; }
+      .install-help-step { display: grid; gap: 6px; padding: 14px 0; border-top: 1px solid rgba(73,100,85,.12); }
+      .install-help-step strong { color: #496455; }
+      .install-help-step span { color: #4f5d55; font-size: 14px; line-height: 1.45; }
+      .install-help-note { font-size: 12px; background: #f7f3ec; padding: 10px 12px; border-radius: 12px; }
+      .install-help-done { width: 100%; border: 0; border-radius: 13px; background: #496455; color: #fff; padding: 12px 16px; font: inherit; font-weight: 800; cursor: pointer; margin-top: 6px; }
+      @media (max-width: 600px) { .footer-action-grid { grid-template-columns: 1fr; } .install-help-modal { padding: 22px 18px 18px; } }
 
       footer {
         text-align: center;
@@ -14445,8 +14543,41 @@ const getDayLabel = (offset: number): string => {
           </div>
         )}
 
+        {showInstallHelp && (
+          <div className="install-help-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowInstallHelp(false); }}>
+            <div className="install-help-modal" role="dialog" aria-modal="true" aria-labelledby="install-help-title">
+              <button type="button" className="install-help-close" aria-label="Close install instructions" onClick={() => setShowInstallHelp(false)}>×</button>
+              <div className="install-help-icon">📲</div>
+              <h2 id="install-help-title">{isStandaloneApp ? 'Breezier Days is already installed' : 'Add Breezier Days to your Home Screen'}</h2>
+              {isStandaloneApp ? (
+                <p>You already have the Home Screen version. You can close this window and keep using Breezier Days.</p>
+              ) : (
+                <>
+                  <div className="install-help-step"><strong>iPhone or iPad — Safari</strong><span>1. Tap the Share button <b>□↑</b> at the bottom of Safari.</span><span>2. Scroll and tap <b>Add to Home Screen</b>.</span><span>3. Tap <b>Add</b>.</span></div>
+                  <div className="install-help-step"><strong>Android — Chrome</strong><span>1. Tap the <b>⋮</b> menu in Chrome.</span><span>2. Tap <b>Add to Home screen</b> or <b>Install app</b>.</span><span>3. Confirm <b>Install</b>.</span></div>
+                  <p className="install-help-note">On iPhone, open Breezier Days in Safari for the Add to Home Screen option. Other in-app browsers may not show it.</p>
+                </>
+              )}
+              <button type="button" className="install-help-done" onClick={() => setShowInstallHelp(false)}>Got it</button>
+            </div>
+          </div>
+        )}
+
         <footer>
           <p style={{ padding: '12px 0' }}>Made for real life — for parents, nannies, grandparents, and caregivers.</p>
+
+          <div className="footer-action-grid" aria-label="Breezier Days support and app shortcuts">
+            {supportEmail && (
+              <a className="footer-action-card" href={supportMailto('Breezier Days support request')}>
+                <span className="footer-action-icon">✉️</span>
+                <span><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
+              </a>
+            )}
+            <button type="button" className="footer-action-card" onClick={() => void openInstallExperience()}>
+              <span className="footer-action-icon">📲</span>
+              <span><strong>{isStandaloneApp ? 'Breezier Days is on your Home Screen' : 'Add Breezier Days to Home Screen'}</strong><small>{isStandaloneApp ? 'Open it anytime like an app.' : 'Keep Breezier Days one tap away.'}</small></span>
+            </button>
+          </div>
 
           <div className="legal-links">
             <button type="button" onClick={() => { pushNavHistory(); setLegalPage('privacy') }}>Privacy Policy</button>
