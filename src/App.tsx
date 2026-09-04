@@ -10002,18 +10002,7 @@ const getDayLabel = (offset: number): string => {
           </div>
         </header>
 
-        <div className="top-utility-strip" aria-label="Breezier Days shortcuts">
-          {supportEmail ? (
-            <a className="top-utility-card" href={supportMailto('Breezier Days support request')}>
-              <span className="top-utility-icon">✉️</span>
-              <span className="top-utility-copy"><strong>Email Support</strong><small>Questions or having trouble? Send us an email.</small></span>
-            </a>
-          ) : (
-            <button type="button" className="top-utility-card" onClick={() => setRuntimeError('Email support is being connected. Please try again shortly.')}>
-              <span className="top-utility-icon">✉️</span>
-              <span className="top-utility-copy"><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
-            </button>
-          )}
+        <div className="top-utility-strip" aria-label="Breezier Days app shortcut">
           {!isStandaloneApp && (
             <button type="button" className="top-utility-card" onClick={() => void openInstallExperience()}>
               <span className="top-utility-icon">📲</span>
