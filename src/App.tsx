@@ -1017,23 +1017,131 @@ const genericSituations = (topic: string, items: Array<[string, string, string]>
     },
   }));
 
-const everydaySituations = genericSituations('everyday routines', [
-  ['dressed', 'They refuse to get dressed', '👕'],
-  ['leave', 'They will not leave the house', '🚪'],
-  ['clean', 'They will not clean up', '🧹'],
-  ['teeth', 'They refuse to brush teeth', '🪥'],
-  ['listen', 'They are not listening', '👂'],
-  ['bed', 'They fight every routine', '🔄'],
-]);
+const everydaySituations: Situation[] = [
+  {
+    id: 'dressed', title: 'They refuse to get dressed', emoji: '👕',
+    guidance: {
+      baby: { title: 'Getting baby dressed', emoji: '👕', doNow: 'Lay out one simple outfit, change your baby on a safe surface, and move steadily from diaper to clothes. If they are squirmy, hand them one safe object to hold while you finish.', sayThis: 'You are wiggly. I am going to help your body get dressed.', avoidThis: 'Avoid turning dressing into a long distraction routine or leaving a baby unattended on a changing surface.', afterward: 'Keep tomorrow’s outfit together in one place so the routine has fewer steps.' },
+      toddler: { title: 'Toddler refuses clothes', emoji: '👕', doNow: 'Offer two acceptable choices, then start the first step for them: “Blue shirt or green shirt?” If they will not choose, calmly choose one and help them put it on.', sayThis: 'You can choose blue or green. If you do not choose, I will help choose.', avoidThis: 'Avoid adding five more outfit choices or arguing about whether they “should” want to get dressed.', afterward: 'When there is no rush, let them practice one dressing skill at a time.' },
+      preschool: { title: 'Preschooler will not get dressed', emoji: '👕', doNow: 'Give one clear direction and a small choice: “Get underwear and pants on. Do you want to do it yourself or have me help?” Use a short timer if the morning is dragging.', sayThis: 'It is time to get dressed. You can do it, or I can help your body get started.', avoidThis: 'Avoid repeating the same direction over and over from another room.', afterward: 'Set clothes out the night before and keep the order the same each morning.' },
+      bigkid: { title: 'School-age child is stalling on clothes', emoji: '👕', doNow: 'State the deadline and the minimum requirement: dressed in weather-appropriate clothes by the time you leave. Let them own the outfit choice within that boundary.', sayThis: 'You need to be dressed by 7:35. You choose the outfit; I will help only if you are stuck.', avoidThis: 'Avoid micromanaging harmless style choices when the real goal is getting out the door.', afterward: 'If mornings stay hard, make a short visual checklist and choose clothes the night before.' },
+      tween: { title: 'Tween is stuck getting dressed', emoji: '👕', doNow: 'Name the time limit and step out of the style debate. If indecision is the issue, ask them to pick the best of two workable outfits and move on.', sayThis: 'You have ten minutes. Pick one of these two workable options and we are done deciding.', avoidThis: 'Avoid criticizing appearance or turning clothing into a character issue.', afterward: 'Talk later about what causes the delay—laundry, comfort, body changes, indecision, or not having clothes they like.' },
+    },
+  },
+  {
+    id: 'leave', title: 'They will not leave the house', emoji: '🚪',
+    guidance: {
+      baby: { title: 'Getting out the door with a baby', emoji: '🚪', doNow: 'Handle the essentials in order: diaper, feed if truly due, safe clothing, car seat. Put everything else in the bag and leave; the outing does not need to start perfectly.', sayThis: 'We are getting ready to go. I am right here.', avoidThis: 'Avoid delaying departure to complete every optional task first.', afterward: 'Keep a small go-bag stocked with the basics.' },
+      toddler: { title: 'Toddler refuses to leave', emoji: '🚪', doNow: 'Give a brief transition warning, then one choice tied to leaving: “Walk to the car or I carry you?” If they do not choose, calmly carry them and keep moving.', sayThis: 'It is time to go. You can walk or I can help your body.', avoidThis: 'Avoid bargaining with snacks, screens, and repeated “one more minute” extensions once you have said it is time.', afterward: 'Use the same leaving cue each day—shoes, bag, goodbye, car.' },
+      preschool: { title: 'Preschooler will not leave', emoji: '🚪', doNow: 'Acknowledge the disappointment once, then move to action. Give a job such as holding the keys or choosing the car song while you help with shoes and coat.', sayThis: 'You wish we could stay. We are still leaving. Your job is to bring the keys.', avoidThis: 'Avoid trying to convince them that leaving is fun while they are already resisting.', afterward: 'Before future transitions, tell them what is ending and what comes next.' },
+      bigkid: { title: 'School-age child is delaying departure', emoji: '🚪', doNow: 'State the exact leave time and what must be done before it. If they are not ready, pause nonessential activities and direct them to the missing step.', sayThis: 'We leave at 4:10. Shoes and bag first; everything else can wait.', avoidThis: 'Avoid vague “hurry up” commands without naming the actual next task.', afterward: 'Ask which part usually slows them down and build that into the routine.' },
+      tween: { title: 'Tween is making everyone late', emoji: '🚪', doNow: 'Give the departure time, the consequence that naturally follows from being late, and let them manage the final steps. Step in only for safety or a true deadline.', sayThis: 'We are in the car at 7:40. Please manage what you need before then.', avoidThis: 'Avoid hovering every two minutes; it often creates more resistance.', afterward: 'Make the next departure time visible and have them work backward from it.' },
+    },
+  },
+  {
+    id: 'clean', title: 'They will not clean up', emoji: '🧹',
+    guidance: {
+      baby: { title: 'Tidying around a baby', emoji: '🧹', doNow: 'Do the cleanup yourself while your baby is safely contained or nearby. If they are mobile, let them hand you one soft toy at a time as play—not as an expectation.', sayThis: 'Toy goes in the basket. Thank you for helping.', avoidThis: 'Avoid expecting meaningful cleanup skills from a baby.', afterward: 'Use a few low baskets so putting things away is easy as they grow.' },
+      toddler: { title: 'Toddler will not clean up', emoji: '🧹', doNow: 'Shrink the job: “Put the blocks in this basket.” Start beside them and hand them the first item. Stop after one clear category if attention is gone.', sayThis: 'Blocks in the basket. I will do some with you.', avoidThis: 'Avoid saying “clean your whole room” to a toddler; it is too broad.', afterward: 'Use one-bin categories and clean up before dumping out the next big activity when possible.' },
+      preschool: { title: 'Preschooler refuses cleanup', emoji: '🧹', doNow: 'Assign one concrete section and make the finish line visible: all cars in the bin, then all books on the shelf. Work alongside them for the first minute.', sayThis: 'You do the cars; I will do the books. Then we are done.', avoidThis: 'Avoid secretly finishing everything after repeated refusals while still expecting them to learn the routine.', afterward: 'Build a five-minute cleanup into the same part of the day.' },
+      bigkid: { title: 'School-age child will not clean', emoji: '🧹', doNow: 'Define what “clean” means in three tasks max, then have them complete those before the next preferred activity.', sayThis: 'Clean means clothes in hamper, floor clear, and dishes out. Do those three first.', avoidThis: 'Avoid changing the standard halfway through once they have met the agreed list.', afterward: 'A written room reset checklist can prevent daily arguments.' },
+      tween: { title: 'Tween resists chores', emoji: '🧹', doNow: 'Agree on the minimum standard and deadline rather than supervising every step. Tie access to shared privileges to completing agreed responsibilities, not to perfection.', sayThis: 'The room needs the floor clear and dishes out by tonight. How you get there is up to you.', avoidThis: 'Avoid shaming them for messiness or doing surprise inspections of personal belongings.', afterward: 'Revisit workload if chores consistently exceed the time you intended them to take.' },
+    },
+  },
+  {
+    id: 'teeth', title: 'They refuse to brush teeth', emoji: '🪥',
+    guidance: {
+      baby: { title: 'Baby tooth care', emoji: '🪥', doNow: 'Use a soft infant toothbrush and a tiny smear of fluoride toothpaste once teeth appear. Keep the brushing brief and gentle while supporting your baby securely.', sayThis: 'Quick brush, then all done.', avoidThis: 'Avoid giving up oral care because your baby protests; keep it short and calm.', afterward: 'Ask your pediatric dentist about technique and fluoride if you are unsure.' },
+      toddler: { title: 'Toddler refuses toothbrushing', emoji: '🪥', doNow: 'Offer one small choice—where to stand or which toothbrush—then calmly help brush. Let them take a turn before or after your turn, but the adult still finishes the job.', sayThis: 'You brush first, then it is my turn to get the sugar bugs off.', avoidThis: 'Avoid turning required hygiene into an optional yes/no question.', afterward: 'Use the same song or 2-minute routine so the sequence becomes predictable.' },
+      preschool: { title: 'Preschooler fights brushing', emoji: '🪥', doNow: 'Let them choose toothpaste or song, then have them brush first and you finish. If they stall, keep the choice but not the requirement.', sayThis: 'You choose the song. You brush, then I finish the hard spots.', avoidThis: 'Avoid threatening dental procedures or cavities to scare cooperation.', afterward: 'Praise the specific cooperation: opening wide, staying still, or finishing both top and bottom.' },
+      bigkid: { title: 'School-age child avoids brushing', emoji: '🪥', doNow: 'Send them back to complete the routine and verify it is actually done. Use a timer if they rush.', sayThis: 'Teeth need a full brush before we move on. Go finish and then check back with me.', avoidThis: 'Avoid assuming independence means they no longer need reminders or occasional supervision.', afterward: 'Keep supplies easy to reach and connect brushing to fixed morning/bedtime cues.' },
+      tween: { title: 'Tween is skipping brushing', emoji: '🪥', doNow: 'Be matter-of-fact: oral hygiene is a health responsibility. Ask what is getting in the way, then fix the friction—supplies, timing, braces discomfort, or forgetting.', sayThis: 'Brushing is non-negotiable health care. What is making it hard to get done consistently?', avoidThis: 'Avoid comments about bad breath or appearance that could embarrass them.', afterward: 'If pain, bleeding, sensitivity, or braces issues are driving avoidance, contact their dental professional.' },
+    },
+  },
+  {
+    id: 'listen', title: 'They are not listening', emoji: '👂',
+    guidance: {
+      baby: { title: 'Baby is not expected to follow directions', emoji: '👂', doNow: 'Move close and physically guide what needs to happen. Babies need repetition, redirection, and environmental safety more than verbal compliance.', sayThis: 'I will help you.', avoidThis: 'Avoid interpreting normal baby exploration as defiance.', afterward: 'Use the same short words for common limits, paired with action.' },
+      toddler: { title: 'Toddler is not listening', emoji: '👂', doNow: 'Get within arm’s reach, say their name, give one short instruction, then help them do it. Example: “Feet on floor,” while gently guiding them down.', sayThis: 'I am going to help you do it.', avoidThis: 'Avoid giving directions across the room five times and then suddenly yelling.', afterward: 'Use fewer words and one direction at a time during busy moments.' },
+      preschool: { title: 'Preschooler is ignoring directions', emoji: '👂', doNow: 'Pause what they are doing, get eye-level if possible, and give one specific instruction. Ask them to repeat the task back if needed.', sayThis: 'First shoes on. Tell me what you are doing first.', avoidThis: 'Avoid stacking three or four instructions together.', afterward: 'Notice when they respond the first time: “You heard me and got started right away.”' },
+      bigkid: { title: 'School-age child is not responding', emoji: '👂', doNow: 'Make sure you have their attention before giving the direction. State what needs to happen and by when, then follow through on the related consequence if they choose not to do it.', sayThis: 'I need the game paused. Dishes in the sink by 6:15.', avoidThis: 'Avoid calling everything “not listening” when the instruction was vague or given while they were deeply engaged elsewhere.', afterward: 'Use routines for repeated responsibilities so fewer reminders are necessary.' },
+      tween: { title: 'Tween seems to ignore you', emoji: '👂', doNow: 'Ask for their attention before speaking and distinguish a request from a requirement. For requirements, give the deadline and let them manage the timing when possible.', sayThis: 'I need your attention for thirty seconds. This needs to be done before dinner.', avoidThis: 'Avoid lecturing after they have already understood the request.', afterward: 'If this is constant, discuss how both of you want to handle interruptions and reminders.' },
+    },
+  },
+  {
+    id: 'bed', title: 'They fight every routine', emoji: '🔄',
+    guidance: {
+      baby: { title: 'Baby resists routines', emoji: '🔄', doNow: 'Keep the routine very short: feed/change as needed, dim lights, one calming cue, then the next step. Babies do not need a long sequence.', sayThis: 'Same steps. You are safe. I am here.', avoidThis: 'Avoid adding more and more soothing steps every time the routine is hard.', afterward: 'Repeat the same two or three cues so they become familiar.' },
+      toddler: { title: 'Toddler fights every transition', emoji: '🔄', doNow: 'Cut the routine to the essentials and use “first, then”: first pajamas, then book. Offer choices only inside the routine, not about whether it happens.', sayThis: 'First pajamas, then you choose the book.', avoidThis: 'Avoid renegotiating each step once the routine has started.', afterward: 'Use a simple picture routine with three or four steps.' },
+      preschool: { title: 'Preschooler turns routines into battles', emoji: '🔄', doNow: 'Name the next two steps, not the whole evening. Let them choose the order only when both orders work.', sayThis: 'We need teeth and pajamas. Which one first?', avoidThis: 'Avoid turning every step into a reward or threat; predictable structure works better long term.', afterward: 'Keep routines short enough that you can follow them consistently even on hard nights.' },
+      bigkid: { title: 'School-age child resists routines', emoji: '🔄', doNow: 'Put recurring responsibilities into a checklist and stop narrating every step. Redirect them to the list when they stall.', sayThis: 'Check your evening list and tell me what is left.', avoidThis: 'Avoid becoming the reminder system for tasks they can increasingly manage themselves.', afterward: 'Adjust the checklist if it routinely takes longer than expected.' },
+      tween: { title: 'Tween resists household routines', emoji: '🔄', doNow: 'Agree on the non-negotiable outcomes and times, then give them room to choose how to sequence the steps.', sayThis: 'These three things need to be done by 9. You can decide the order.', avoidThis: 'Avoid controlling harmless details that do not affect safety, health, or the family schedule.', afterward: 'Review the routine together if it is creating conflict every day.' },
+    },
+  },
+];
 
-const learningSituations = genericSituations('learning and development', [
-  ['play', 'What should we practice today?', '🧠'],
-  ['reading', 'They do not want to read', '📚'],
-  ['independent', 'They want to do it themselves', '🙌'],
-  ['frustrated', 'They get frustrated learning', '😣'],
-  ['screen', 'I need a screen-free idea', '📵'],
-  ['milestone', 'I am wondering about a milestone', '🌱'],
-]);
+const learningSituations: Situation[] = [
+  {
+    id: 'play', title: 'What should we practice today?', emoji: '🧠',
+    guidance: {
+      baby: { title: 'Practice through everyday baby play', emoji: '🧠', doNow: 'Choose one simple skill for five minutes: tummy time, reaching for a toy, tracking your face, sitting with support, or passing an object hand to hand—depending on what your baby is already working on.', sayThis: 'You found it! Try again.', avoidThis: 'Avoid pushing a milestone your baby is not ready for or comparing them with another child.', afterward: 'Repeat the same little skill during normal floor play rather than creating a formal lesson.' },
+      toddler: { title: 'One toddler skill for today', emoji: '🧠', doNow: 'Pick one useful skill and practice it in real life: matching socks, putting toys in a bin, naming body parts, carrying a cup, or following a one-step direction.', sayThis: 'You do this part. I will help if you need me.', avoidThis: 'Avoid drilling flashcards when movement and hands-on practice would teach the same concept better.', afterward: 'Stop while they are still interested; five good minutes counts.' },
+      preschool: { title: 'A preschool skill to practice', emoji: '🧠', doNow: 'Choose one playful skill: cut paper strips with child-safe scissors, sort objects by color/size, write the first letter of their name, count snacks, or practice zipping a jacket.', sayThis: 'Let us try it once together, then you can try.', avoidThis: 'Avoid correcting every small mistake; the goal is practice, not a perfect product.', afterward: 'Use the skill again later in a normal task so it sticks.' },
+      bigkid: { title: 'Practice one school-age life skill', emoji: '🧠', doNow: 'Choose something useful and concrete: make a simple snack, read a short set of instructions, count change, pack tomorrow’s bag, write a thank-you note, or learn one household task.', sayThis: 'I will show you once, then you take the lead.', avoidThis: 'Avoid making every learning activity feel like extra homework.', afterward: 'Let them use the new skill independently within the next day or two.' },
+      tween: { title: 'Practice a real-life tween skill', emoji: '🧠', doNow: 'Pick one independence skill that matters now: plan a simple meal, read a label, manage a small budget, organize school tasks, wash laundry, or draft a respectful message.', sayThis: 'Pick one thing you want to be able to handle more independently.', avoidThis: 'Avoid choosing a skill only because you think they “should” already know it.', afterward: 'Hand over more ownership once they can do the basics safely.' },
+    },
+  },
+  {
+    id: 'reading', title: 'They do not want to read', emoji: '📚',
+    guidance: {
+      baby: { title: 'Baby resists books', emoji: '📚', doNow: 'Skip the goal of finishing a book. Let your baby hold, mouth, point at, and turn sturdy pages while you name one or two pictures.', sayThis: 'Dog! Woof woof. You found the dog.', avoidThis: 'Avoid expecting a baby to sit through a full story.', afterward: 'Keep board books where your baby can reach them during play.' },
+      toddler: { title: 'Toddler will not sit for a book', emoji: '📚', doNow: 'Choose a short book and let them control the pace. Read only the pages they stop on, ask them to find a picture, or tell the story from the pictures instead of reading every word.', sayThis: 'Can you find the truck?', avoidThis: 'Avoid forcing them to sit still until the last page.', afterward: 'Try books during snack, bath wind-down, or another naturally slower moment.' },
+      preschool: { title: 'Preschooler says no to reading', emoji: '📚', doNow: 'Offer two books or switch roles: they “read” the pictures and you read one sentence. Keep it playful and stop after ten minutes or sooner if interest disappears.', sayThis: 'You tell me what is happening in the picture, and I will read this part.', avoidThis: 'Avoid quizzing them after every page.', afterward: 'Let them choose library books about whatever they are currently obsessed with.' },
+      bigkid: { title: 'School-age child avoids reading', emoji: '📚', doNow: 'Find the friction first: book too hard, topic boring, tired, or reading feels like work. Then lower the barrier—graphic novel, audiobook paired with print, shared reading, or ten focused minutes.', sayThis: 'We only need to solve what makes reading hard right now. What is the hardest part?', avoidThis: 'Avoid using reading as punishment or insisting every book be “educational.”', afterward: 'If reading is persistently unusually difficult, bring the pattern to the teacher or appropriate professional.' },
+      tween: { title: 'Tween does not want to read', emoji: '📚', doNow: 'Separate required reading from recreational reading. For school reading, break the assignment into small chunks. For pleasure, let format and topic be theirs—even comics, sports writing, fan guides, or audiobooks.', sayThis: 'For school, let us break down what has to get done. For fun, you can choose what counts as reading.', avoidThis: 'Avoid dismissing formats they enjoy because they do not look like traditional novels.', afterward: 'Look for a consistent time when reading is easiest, not just when everything else is finished.' },
+    },
+  },
+  {
+    id: 'independent', title: 'They want to do it themselves', emoji: '🙌',
+    guidance: {
+      baby: { title: 'Baby wants more independence', emoji: '🙌', doNow: 'Let your baby attempt safe parts of the task—holding the spoon, reaching for the cup, pulling off a sock—while you control the unsafe or difficult part.', sayThis: 'You are trying. I will help with this part.', avoidThis: 'Avoid rushing in the second they struggle if the task is safe.', afterward: 'Build extra time into low-stakes routines so they can experiment.' },
+      toddler: { title: 'Toddler says “me do it!”', emoji: '🙌', doNow: 'Give them a real job they can manage and quietly help only the hardest part. If time is tight, name what they can do and what you will do.', sayThis: 'You do the zipper pull. I will start it for you.', avoidThis: 'Avoid taking over the whole task because their attempt is slow or messy.', afterward: 'Practice difficult self-help skills when you are not rushing out the door.' },
+      preschool: { title: 'Preschooler wants to do everything alone', emoji: '🙌', doNow: 'Let them try first, then offer the smallest amount of help needed. Use “show me where you are stuck” instead of automatically taking over.', sayThis: 'Try it first. If you get stuck, show me the part that needs help.', avoidThis: 'Avoid correcting the method when the result is safe and good enough.', afterward: 'Give them one regular responsibility they can own completely.' },
+      bigkid: { title: 'School-age child wants more independence', emoji: '🙌', doNow: 'Decide whether the task is safe to hand over. If yes, state the outcome and let them choose the process; be available for questions without hovering.', sayThis: 'You can own this. Here is what needs to be true when you are finished.', avoidThis: 'Avoid redoing the task in front of them just because you would do it differently.', afterward: 'Increase responsibility gradually as reliability grows.' },
+      tween: { title: 'Tween wants more control', emoji: '🙌', doNow: 'Separate what truly requires adult approval from what can become theirs. Hand over one meaningful decision or responsibility with clear limits.', sayThis: 'This part is your decision. These are the two limits I need you to work within.', avoidThis: 'Avoid asking for maturity while denying reasonable chances to practice it.', afterward: 'Review how it went based on safety and responsibility, not whether they copied your exact approach.' },
+    },
+  },
+  {
+    id: 'frustrated', title: 'They get frustrated learning', emoji: '😣',
+    guidance: {
+      baby: { title: 'Baby gets frustrated practicing a skill', emoji: '😣', doNow: 'Let them try briefly, then change the setup or give enough help to make success possible. Stop if frustration becomes full distress.', sayThis: 'That is hard. I will help a little.', avoidThis: 'Avoid repeatedly pushing the same skill after your baby is overwhelmed.', afterward: 'Try again later when they are rested and fed.' },
+      toddler: { title: 'Toddler melts down when learning', emoji: '😣', doNow: 'Make the task easier immediately. Do the first half together, then let them finish one successful step.', sayThis: 'This part is hard. I will start it and you finish.', avoidThis: 'Avoid saying “you can do it” over and over without actually reducing the difficulty.', afterward: 'Return to the skill in tiny pieces during play.' },
+      preschool: { title: 'Preschooler gets upset when it is hard', emoji: '😣', doNow: 'Pause before the frustration peaks. Name the problem, offer one strategy, and give them a choice to try again or take a short break.', sayThis: 'Your hands are having trouble with this part. Want one hint or a quick break?', avoidThis: 'Avoid praising only success; praise staying with a hard task and asking for help.', afterward: 'Teach one phrase they can use next time: “Can you give me a hint?”' },
+      bigkid: { title: 'School-age child shuts down when learning', emoji: '😣', doNow: 'Identify the exact stuck point and reduce the task to one problem, one paragraph, or one step. Help them start without completing it for them.', sayThis: 'Show me the first place this stopped making sense.', avoidThis: 'Avoid arguing about attitude while they are cognitively overloaded.', afterward: 'If the same subject repeatedly causes disproportionate distress, compare notes with the teacher.' },
+      tween: { title: 'Tween gets frustrated and gives up', emoji: '😣', doNow: 'Help them separate “I do not know this yet” from “I cannot do this.” Pick one next action: example problem, instructions, teacher message, break, or asking a specific question.', sayThis: 'What is the next useful move—not the whole solution?', avoidThis: 'Avoid jumping straight into a motivational speech when they need concrete help.', afterward: 'Build a repeatable stuck-plan they can use without you.' },
+    },
+  },
+  {
+    id: 'screen', title: 'I need a screen-free idea', emoji: '📵',
+    guidance: {
+      baby: { title: 'Easy screen-free baby activity', emoji: '📵', doNow: 'Put a blanket on the floor with three safe household objects of different textures—a silicone spoon, soft cloth, and large plastic cup—and let your baby explore while you stay nearby.', sayThis: 'What did you find?', avoidThis: 'Avoid complicated sensory setups with small pieces or anything that could be a choking hazard.', afterward: 'Rotate the objects instead of buying a new activity.' },
+      toddler: { title: 'Easy screen-free toddler activity', emoji: '📵', doNow: 'Give them a low-effort job: move socks into a basket, wash plastic cups in a little water, stick painter’s tape to the floor, or push toy cars through a cardboard-box “garage.”', sayThis: 'Can you put every sock in this basket?', avoidThis: 'Avoid choosing an activity that requires you to supervise a complicated craft when you already need a break.', afterward: 'Keep a small basket of “busy but simple” materials ready for hard parts of the day.' },
+      preschool: { title: 'Screen-free preschool idea', emoji: '📵', doNow: 'Pick one: draw a map of the house, build the tallest block tower, make a stuffed-animal doctor office, cut scrap paper into “tickets,” or do a ten-item scavenger hunt.', sayThis: 'Your mission is to find five things that are soft and five things that are blue.', avoidThis: 'Avoid presenting ten ideas at once; choose one and start it with them for two minutes.', afterward: 'If it catches, step away gradually so they take over the play.' },
+      bigkid: { title: 'Screen-free school-age idea', emoji: '📵', doNow: 'Offer a challenge with a finish line: make a snack from three ingredients, build a blanket fort that fits two people, draw a comic strip, create an obstacle course, or invent a card game.', sayThis: 'Pick one challenge and make your version of it.', avoidThis: 'Avoid replacing screens only with chores unless that is actually the goal.', afterward: 'Ask them to add their best ideas to a family boredom list.' },
+      tween: { title: 'Screen-free tween idea', emoji: '📵', doNow: 'Offer something with autonomy: bake or cook, rearrange a corner of their room, take photos on a walk without posting, make a playlist on paper for later, draw, journal, shoot hoops, or learn a hands-on skill.', sayThis: 'Pick something that uses your hands, your body, or your creativity for twenty minutes.', avoidThis: 'Avoid prescribing an activity that feels babyish or overly managed.', afterward: 'Let them help build the list of screen-free options they would actually choose.' },
+    },
+  },
+  {
+    id: 'milestone', title: 'I am wondering about a milestone', emoji: '🌱',
+    guidance: {
+      baby: { title: 'You are wondering about a baby milestone', emoji: '🌱', doNow: 'Write down the exact skill you are wondering about, what your baby does now, and when you first noticed the concern. Compare with guidance from your pediatrician or an established developmental screening source rather than social media clips.', sayThis: 'I am going to look at what you are doing now, not compare you with another baby.', avoidThis: 'Avoid using one missed milestone date alone to diagnose a delay.', afterward: 'Bring the specific observation to your child’s healthcare professional, especially if skills are lost or you have a persistent concern.' },
+      toddler: { title: 'You are wondering about a toddler milestone', emoji: '🌱', doNow: 'Focus on the exact area—language, movement, play, social interaction, feeding, or self-help—and note examples of what your toddler currently does. Use that concrete information when you check with their pediatrician.', sayThis: 'I am watching how you are growing, not grading you.', avoidThis: 'Avoid comparing siblings or assuming a single internet checklist tells the whole story.', afterward: 'If your instinct says something is off, it is reasonable to ask for developmental screening rather than waiting for certainty.' },
+      preschool: { title: 'You are wondering about a preschool milestone', emoji: '🌱', doNow: 'Write down two or three specific examples of the skill you are concerned about and how it affects daily life. Share those examples with the pediatrician, teacher, or relevant professional.', sayThis: 'Everyone learns on a different timeline. We can get help with the parts that are hard.', avoidThis: 'Avoid practicing the skill under pressure just to “test” them repeatedly.', afterward: 'Ask what range is expected, what signs would warrant evaluation, and what you can practice naturally at home.' },
+      bigkid: { title: 'You are wondering about school-age development', emoji: '🌱', doNow: 'Define the concern in observable terms—reading, coordination, friendships, attention, speech, self-care, or emotional regulation—and collect examples from more than one setting if possible.', sayThis: 'We are figuring out what support makes things easier for you.', avoidThis: 'Avoid labeling the child based on one difficult subject or one rough season.', afterward: 'Coordinate with the pediatrician and school if the concern is persistent or affecting daily functioning.' },
+      tween: { title: 'You are wondering about tween development', emoji: '🌱', doNow: 'Separate normal variation from a specific functional concern. Note what changed, how long it has been happening, and whether it affects school, sleep, friendships, hygiene, mood, or daily responsibilities.', sayThis: 'You do not have to develop exactly like anyone else. We will pay attention to what you need.', avoidThis: 'Avoid commenting on puberty or body development in a way that compares or embarrasses them.', afterward: 'Bring persistent concerns or loss of previously mastered skills to an appropriate healthcare professional.' },
+    },
+  },
+];
 
 
 const helpNowSituations: Situation[] = [
@@ -4342,8 +4450,10 @@ default:
 
   // Recover from browser back/forward cache and retry sync when connectivity returns.
   useEffect(() => {
-    const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) { window.location.reload(); return; }
+    const handlePageShow = (_event: PageTransitionEvent) => {
+      // Safari/iOS may restore Breezier Days from the back-forward cache.
+      // Do not force a full reload here; just resume a normal sync so the
+      // parent stays on the screen they were using.
       if (navigator.onLine) schedulePush();
     };
     const handleOnline = () => schedulePush();
@@ -14621,17 +14731,10 @@ const getDayLabel = (offset: number): string => {
           <p style={{ padding: '12px 0' }}>Made for real life — for parents, nannies, grandparents, and caregivers.</p>
 
           <div className="footer-action-grid" aria-label="Breezier Days support and app shortcuts">
-            {supportEmail ? (
-              <a className="footer-action-card" href={supportMailto('Breezier Days support request')}>
-                <span className="footer-action-icon">✉️</span>
-                <span><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
-              </a>
-            ) : (
-              <button type="button" className="footer-action-card" onClick={() => setRuntimeError('Email support is being connected. Please try again shortly.')}>
-                <span className="footer-action-icon">✉️</span>
-                <span><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
-              </button>
-            )}
+            <a className="footer-action-card" href={supportMailto('Breezier Days support request')}>
+              <span className="footer-action-icon">✉️</span>
+              <span><strong>Email Support</strong><small>Questions or having trouble? We’re here to help.</small></span>
+            </a>
             <button type="button" className="footer-action-card" onClick={() => void openInstallExperience()}>
               <span className="footer-action-icon">📲</span>
               <span><strong>{isStandaloneApp ? 'Breezier Days is on your Home Screen' : 'Add Breezier Days to Home Screen'}</strong><small>{isStandaloneApp ? 'Open it anytime like an app.' : 'Keep Breezier Days one tap away.'}</small></span>
