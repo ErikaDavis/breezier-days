@@ -6,9 +6,9 @@ import ts from 'typescript';
 
 // Execute the production handlers with React's functional state-update contract.
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
-const handlers = source.slice(source.indexOf('  const toggleDevelopmentActivity ='), source.indexOf('  const legalContent ='));
+const handlers = source.slice(source.indexOf('  const toggleDevelopmentActivity ='), source.indexOf('  useEffect(() => { if (weatherError)'));
 function app(children, selectedChildId = null) {
-  const context = { selectedChildId, setChildren(update) { children = update(children); } };
+  const context = { selectedChildId, children, startFeature() {}, afterStored() {}, setChildren(update) { children = update(children); context.children = children; } };
   vm.createContext(context);
   vm.runInContext(ts.transpileModule(handlers + '\nglobalThis.actions = { toggleDevelopmentActivity, removeDevelopmentActivity };', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
   return { ...context.actions, children: () => children };

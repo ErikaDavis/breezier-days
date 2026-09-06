@@ -52,10 +52,10 @@ export async function signInToPremium(email: string, password: string): Promise<
   return { user: toPremiumUser(data.user), error: error?.message ?? null };
 }
 
-export async function createPremiumAccount(email: string, password: string): Promise<{ user: PremiumUser | null; confirmationRequired: boolean; error: string | null }> {
+export async function createPremiumAccount(email: string, password: string): Promise<{ user: PremiumUser | null; confirmationRequired: boolean; created?: boolean; error: string | null }> {
   if (!supabase) return { user: null, confirmationRequired: false, error: `Premium is not configured. ${supportMessage}` };
   const { data, error } = await supabase.auth.signUp({ email, password });
-  return { user: toPremiumUser(data.user), confirmationRequired: !data.session && !error, error: error?.message ?? null };
+  return { user: toPremiumUser(data.user), confirmationRequired: !data.session && !error, created: !error && Boolean(data.user?.identities?.length), error: error?.message ?? null };
 }
 
 async function accessToken(): Promise<string> {
@@ -63,6 +63,15 @@ async function accessToken(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session || !toPremiumUser(session.user)) throw new Error('Please sign in to your Premium account first.');
   return session.access_token;
+}
+
+export async function verifyCheckout(sessionId: string): Promise<{ verified: boolean; receipt?: string | null }> {
+  const response = await fetch('/api/verify-checkout', {
+    method: 'POST', headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!response.ok) throw new Error('Checkout verification failed.');
+  return response.json();
 }
 
 async function request<T>(path: string, method: 'GET' | 'POST'): Promise<ApiResult<T>> {

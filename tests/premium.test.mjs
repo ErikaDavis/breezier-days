@@ -21,7 +21,7 @@ async function backend(options = {}) {
   const stripe = new Stripe('sk_test_fixture');
   function FakeStripe(_key, config) {
     assert.equal(config?.apiVersion, '2025-03-31.basil', 'billing requests must support Managed Payments');
-    return { webhooks: stripe.webhooks, subscriptions: { retrieve: async () => subscription }, customers: { create: async () => ({ id: 'cus_test' }) }, checkout: { sessions: { create: async value => { checkout = value; return { url: 'https://checkout.stripe.com/test' }; } } } };
+    return { webhooks: stripe.webhooks, subscriptions: { retrieve: async () => subscription }, customers: { create: async () => ({ id: 'cus_test' }) }, checkout: { sessions: { retrieve: async () => ({ id: 'cs_live_verified', client_reference_id: user.id, metadata: { supabase_user_id: user.id }, mode: 'subscription', status: 'complete', payment_status: 'paid', amount_total: 999, line_items: { data: [{ price: { id: env.STRIPE_PREMIUM_PRICE_ID } }] }, ...options.checkoutSession }), create: async value => { checkout = value; return { url: 'https://checkout.stripe.com/test' }; } } } };
   }
   const db = { auth: { getUser: async token => token === 'valid' ? { data: { user: options.user || user }, error: null } : { data: { user: null }, error: new Error('invalid token') } }, from(table) {
     const stored = table === 'billing_customers' ? mappings : rows;
@@ -45,7 +45,7 @@ async function backend(options = {}) {
     };
     return query;
   } };
-  const context = vm.createContext({ Request, Response, console: { error() {} }, Netlify: { env: { get: name => env[name] } } });
+  const context = vm.createContext({ crypto: globalThis.crypto, TextEncoder, Request, Response, console: { error() {} }, Netlify: { env: { get: name => env[name] } } });
   const cache = new Map();
   async function load(url) {
     if (cache.has(url)) return cache.get(url);
@@ -77,7 +77,7 @@ test('checkout authenticates and links the same user to session and subscription
   assert.equal(b.checkout.client_reference_id, user.id);
   assert.equal(b.checkout.subscription_data.metadata.supabase_user_id, user.id);
   assert.equal(b.checkout.line_items[0].price, env.STRIPE_PREMIUM_PRICE_ID);
-  assert.equal(b.checkout.success_url, env.APP_ORIGIN + '/?premium=success');
+  assert.equal(b.checkout.success_url, env.APP_ORIGIN + '/?premium=success&checkout_session_id={CHECKOUT_SESSION_ID}');
 });
 
 test('billing rejects missing, invalid and anonymous identities', async () => {
@@ -197,7 +197,7 @@ test('visibility refresh preserves verified status on transport failure and reje
     document: { visibilityState: 'visible', addEventListener: (_name, fn) => { visible = fn; }, removeEventListener() {} },
     premiumUser: user, premiumUserIdRef: identity, isPremium: true,
     checkPremiumStatus: async () => result,
-    setIsPremium: value => { premium = value; }, setCancelAtPeriodEnd() {}, setPremiumUntil() {}, setShowPremiumSuccess() {},
+    setAnalyticsVerifiedAccount() {}, setIsPremium: value => { premium = value; }, setCancelAtPeriodEnd() {}, setPremiumUntil() {}, setShowPremiumSuccess() {},
   });
   run(); visible(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(premium, true);
@@ -249,7 +249,7 @@ test('checkout return survives delayed auth and StrictMode, polling until the se
     window: { location: { search: '?premium=success&keep=1', pathname: '/', hash: '#section' }, history: { replaceState: (_a,_b,url) => { replacement = url; } } },
     setTimeout: fn => timers.push(fn), setPremiumChecking() {}, setShowPremiumSuccess() {}, setShowPremiumModal() {}, setPremiumAuthMessage() {}, setCheckoutError() {},
     checkPremiumStatus: async () => ({ isPremium: ++reads >= 2, currentPeriodEnd: future, cancelAtPeriodEnd: false }),
-    applyPremiumStatus: remote => { premium = remote; }, setIsPremium: value => { premium = value; }, setCancelAtPeriodEnd() {}, setPremiumUntil() {},
+    applyPremiumStatus: remote => { premium = remote; }, setAnalyticsVerifiedAccount() {}, setIsPremium: value => { premium = value; }, setCancelAtPeriodEnd() {}, setPremiumUntil() {},
   };
   const run = vm.runInNewContext('(' + callback + ')', ctx);
   run();
@@ -264,4 +264,28 @@ test('checkout return survives delayed auth and StrictMode, polling until the se
   assert.equal(reads, 2);
   assert.equal(premium, true);
   assert.equal(replacement, '/?keep=1#section');
+});
+
+
+test('checkout conversion verifies payment, ownership and Premium price without granting access', async () => {
+  const b = await backend();
+  const result = await b.call('verify-checkout', { method: 'POST', body: JSON.stringify({ sessionId: 'cs_live_verified' }) });
+  assert.equal(result.status, 200);
+  const data = await result.json(); assert.equal(data.verified, true); assert.match(data.receipt, /^[a-f0-9]{64}$/);
+  assert.equal(b.writes.length, 0);
+  for (const checkoutSession of [
+    {payment_status:'unpaid'}, {status:'open'}, {amount_total:0}, {mode:'payment'},
+    {line_items:{data:[{price:{id:'price_other'}}]}}
+  ]) {
+    const bad = await backend({checkoutSession});
+    const value = await (await bad.call('verify-checkout', {method:'POST',body:JSON.stringify({sessionId:'cs_live_verified'})})).json();
+    assert.equal(value.verified,false); assert.equal(value.receipt,null);
+  }
+  for (const checkoutSession of [{client_reference_id:'other'}, {metadata:{supabase_user_id:'other'}}]) {
+    const bad=await backend({checkoutSession});
+    assert.equal((await bad.call('verify-checkout',{method:'POST',body:JSON.stringify({sessionId:'cs_live_verified'})})).status,403);
+  }
+  assert.equal((await b.call('verify-checkout',{method:'POST',token:null,body:'{}'})).status,401);
+  assert.equal((await b.call('verify-checkout',{method:'POST',body:JSON.stringify({sessionId:'forged'})})).status,400);
+  assert.equal((await b.call('verify-checkout')).status,405);
 });

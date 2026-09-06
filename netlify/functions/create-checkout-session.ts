@@ -25,7 +25,7 @@ export default async (request: Request) => {
       subscription_data: { metadata: { supabase_user_id: user.id } }, metadata: { supabase_user_id: user.id },
       // The return page is informational only. Entitlements are written by the
       // signed Stripe webhook, never by browser-provided Checkout data.
-      success_url: `${origin}/?premium=success`,
+      success_url: `${origin}/?premium=success&checkout_session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?premium=cancelled`,
     });
     if (!session.url) throw new Error('Stripe did not return a Checkout URL.');

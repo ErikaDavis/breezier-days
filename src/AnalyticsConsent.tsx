@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { setAnalyticsContext, setAnalyticsTransport, observeAnalyticsSurfaces, type AccountState } from './analytics';
 
 const measurementId = (import.meta.env.VITE_GA_MEASUREMENT_ID || '').trim();
 const configured = /^G-[A-Z0-9]+$/.test(measurementId);
@@ -49,16 +50,31 @@ function trackPage(page: string) {
   });
 }
 
-export default function AnalyticsConsent({ page }: { page: 'home' | 'help' | 'explore' | 'saved' }) {
+export default function AnalyticsConsent({ page, accountState = 'unknown' }: { page: 'home' | 'help' | 'explore' | 'saved'; accountState?: AccountState }) {
   const [choice, setChoice] = useState<Choice>(readConsent);
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
-    if (choice === 'granted') trackPage(page);
+    setAnalyticsContext(page, accountState);
+    if (choice === 'granted' && configured) {
+      trackPage(page);
+      setAnalyticsTransport((event, params) => {
+        (window as AnalyticsWindow).gtag!('event', event, {
+          ...params, send_to: measurementId,
+          page_title: `Breezier Days — ${page}`,
+          page_location: `${window.location.origin}/${page === 'home' ? '' : page}`,
+          page_referrer: '',
+        });
+      });
+    } else setAnalyticsTransport(null);
+  }, [choice, page, accountState]);
+  useEffect(() => {
+    if (choice !== 'granted' || !configured) return;
+    return observeAnalyticsSurfaces();
   }, [choice, page]);
   useEffect(() => {
     const syncConsent = (event: StorageEvent) => {
       if (event.key !== consentKey && event.key !== null) return;
-      if (initialized && readConsent() !== 'granted') window.location.reload();
+      if (initialized && readConsent() !== 'granted') { setAnalyticsTransport(null); window.location.reload(); }
       else setChoice(readConsent());
     };
     window.addEventListener('storage', syncConsent);
@@ -66,6 +82,7 @@ export default function AnalyticsConsent({ page }: { page: 'home' | 'help' | 'ex
   }, []);
   if (!configured) return null;
   const choose = (next: Exclude<Choice, null>) => {
+    if (next === 'denied') setAnalyticsTransport(null);
     try { localStorage.setItem(consentKey, next); } catch { /* Keep the choice for this visit. */ }
     setChoice(next);
     setSettingsOpen(false);

@@ -17,7 +17,9 @@ function browser(saved = null) {
   const source = readFileSync(new URL('../src/AnalyticsConsent.tsx', import.meta.url), 'utf8').replace('import.meta.env.VITE_GA_MEASUREMENT_ID', JSON.stringify('G-GTWY7W5NE9'));
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
-  vm.runInNewContext(js, { exports, require: name => name === 'react' ? react : { jsx, jsxs: jsx, Fragment: 'fragment' }, window, document: { cookie: '', createElement: () => ({}), head: { appendChild: script => scripts.push(script) } }, localStorage: { getItem: () => consent, setItem: (_key, value) => { consent = value; } }, console });
+  const analyticsExports = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/analytics.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: analyticsExports });
+  vm.runInNewContext(js, { exports, require: name => name === 'react' ? react : name === './analytics' ? analyticsExports : { jsx, jsxs: jsx, Fragment: 'fragment' }, window, document: { cookie: '', createElement: () => ({}), head: { appendChild: script => scripts.push(script) } }, localStorage: { getItem: () => consent, setItem: (_key, value) => { consent = value; } }, console });
   function render(page = 'home') { cursor = 0; const tree = exports.default({ page }); effects.splice(0).forEach(fn => fn()); return tree; }
   function click(tree, text) {
     if (!tree || typeof tree !== 'object') return false;

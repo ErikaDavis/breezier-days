@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import AnalyticsConsent from './AnalyticsConsent';
+import { track, startFeature, helpFeature, itemType, analyticsEnabled, analyticsEpoch, recordVerifiedConversion, type AccountState } from './analytics';
 import { useCloudSync } from './useCloudSync';
-import { checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, requestPasswordReset, signInToPremium, updatePremiumPassword, type PremiumUser } from './supabaseClient';
+import { verifyCheckout, checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, requestPasswordReset, signInToPremium, updatePremiumPassword, type PremiumUser } from './supabaseClient';
 import { developmentTopics, getDevelopmentTopic, detectDevelopmentTopic, type DevelopmentGuidance } from './developmentData';
 import {
   learningActivities, learningCategories, learningAgeGroups,
@@ -2288,6 +2289,21 @@ function App() {
   const previousPremiumUserIdRef = useRef<string | undefined>(premiumUser?.id);
   premiumUserIdRef.current = premiumUser?.id;
   const [premiumAuthReady, setPremiumAuthReady] = useState(false);
+  const [analyticsVerifiedAccount, setAnalyticsVerifiedAccount] = useState<{ id: string; premium: boolean } | null>(null);
+  const analyticsAccount: AccountState = !premiumAuthReady ? 'unknown' : !premiumUser ? 'signed_out' : analyticsVerifiedAccount?.id !== premiumUser.id ? 'unknown' : analyticsVerifiedAccount.premium ? 'premium' : 'signed_in_free';
+  const reopenedMeasurement = useRef<'learning_plans' | 'meals' | null>(null);
+  const pendingMeasurements = useRef<Array<{ bucket: string; epoch: number; emit: () => void }>>([]);
+  const afterStored = (bucket: string, emit: () => void) => {
+    if (analyticsEnabled()) pendingMeasurements.current.push({ bucket, epoch: analyticsEpoch(), emit });
+  };
+  const storedMeasurements = (bucket: string, ok: boolean) => {
+    const pending = pendingMeasurements.current.filter(item => item.bucket === bucket);
+    pendingMeasurements.current = pendingMeasurements.current.filter(item => item.bucket !== bucket);
+    for (const item of pending) if (item.epoch === analyticsEpoch()) {
+      if (ok) item.emit();
+      else track('feature_error', bucket === 'children' ? 'growing_learning' : 'saved', { code: 'storage_failed' });
+    }
+  };
   const [premiumAuthMode, setPremiumAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [premiumAuthEmail, setPremiumAuthEmail] = useState('');
   const [premiumAuthPassword, setPremiumAuthPassword] = useState('');
@@ -2416,6 +2432,7 @@ function App() {
 
   // The check-in intentionally stays simple: two choices only.
   const openHelpNow = () => {
+    startFeature('practical_help');
     closeCompetingViews();
     setActiveNav('help');
     setSelectedSituation(null);
@@ -2755,6 +2772,16 @@ function App() {
           if (cancelled) return;
           if (remote) {
             applyPremiumStatus(remote, currentPeriodEnd, cancelFlag);
+            const checkoutReference = params.get('checkout_session_id');
+            if (checkoutReference && analyticsEnabled()) {
+              const epoch = analyticsEpoch();
+              void verifyCheckout(checkoutReference).then(payment => {
+                if (epoch === analyticsEpoch() && premiumUserIdRef.current === premiumUser.id) recordVerifiedConversion(payment.receipt || '', payment.verified);
+              }).catch(() => {
+                if (epoch === analyticsEpoch() && premiumUserIdRef.current === premiumUser.id) track('feature_error', 'premium', { code: 'verification_failed' });
+              });
+            }
+            params.delete('checkout_session_id');
             params.delete('premium');
             window.history.replaceState({}, '', window.location.pathname + (params.size ? `?${params}` : '') + window.location.hash);
             setPremiumChecking(false);
@@ -2787,6 +2814,7 @@ function App() {
         if (premiumUserIdRef.current !== premiumUser.id) return;
         // A failed request is not an authoritative loss of entitlement.
         if (error) return;
+        setAnalyticsVerifiedAccount({ id: premiumUser.id, premium: remote });
         setIsPremium(remote);
         setCancelAtPeriodEnd(cancelFlag);
         if (currentPeriodEnd) {
@@ -3033,6 +3061,7 @@ default:
   };
 
   const chooseActivityForNeed = (need: QuickNeed) => {
+    startFeature('activities', 'request');
     setSelectedHelp('activities');
     setSelectedSituation(null);
     setSelectedNeed(need);
@@ -3041,6 +3070,7 @@ default:
     const pool = candidates.length ? candidates : matchingActivities;
     const nextActivity = chooseBestActivity(pool, selectedTime, need);
     if (!nextActivity) {
+      track('feature_error', 'activities', { code: 'no_result' });
       setActivitySelectionMessage('I could not find a matching idea yet. Try Browse all ideas.');
       return;
     }
@@ -3053,6 +3083,7 @@ default:
   };
 
   const chooseActivityForTime = (minutes: number | null) => {
+    startFeature('activities', 'request');
     setSelectedTime(minutes);
     const needCandidates = selectedNeed
       ? matchingActivities.filter((item) => item.needs?.includes(selectedNeed))
@@ -3060,6 +3091,7 @@ default:
     const pool = needCandidates.length ? needCandidates : matchingActivities;
     const nextActivity = chooseBestActivity(pool, minutes, selectedNeed);
     if (!nextActivity) {
+      track('feature_error', 'activities', { code: 'no_result' });
       setActivitySelectionMessage('I could not find an exact time match yet. Browse all ideas to see everything available.');
       return;
     }
@@ -3068,7 +3100,8 @@ default:
   };
 
   const chooseActivity = () => {
-    if (!matchingActivities.length) return;
+    startFeature('activities', 'request');
+    if (!matchingActivities.length) { track('feature_error', 'activities', { code: 'no_result' }); return; }
     const randomIndex = Math.floor(Math.random() * matchingActivities.length);
     setActivity(matchingActivities[randomIndex]);
     setShowAll(false);
@@ -3134,6 +3167,7 @@ default:
   };
 
   const requestWeatherLocation = () => {
+    startFeature('weather', 'open');
     if (!navigator.geolocation) {
       setWeatherManualMode(true);
       return;
@@ -3163,6 +3197,7 @@ default:
   const fetchWeatherByLocation = async () => {
     const query = weatherManualInput.trim();
     if (!query) return;
+    startFeature('weather', 'open');
     setWeatherLoading(true);
     setWeatherError(null);
     try {
@@ -3194,6 +3229,7 @@ default:
   };
 
   const recommendWeatherActivities = () => {
+    startFeature('weather', 'request');
     if (!weatherData) return;
     const category = weatherCodeToCategory(weatherData.code, weatherData.temp, weatherData.unit);
     const stageAge: AgeId = ['baby', 'toddler', 'preschool', 'bigkid'].includes(selectedStage as string)
@@ -3954,6 +3990,7 @@ default:
     if (justTellMeSubmittingRef.current) return;
     const text = justTellMeText.trim();
     if (!text) return;
+    startFeature('personalized_help', 'request');
     justTellMeSubmittingRef.current = true;
     setJustTellMeLoading(true);
     setJustTellMeError(null);
@@ -4063,6 +4100,7 @@ default:
       justTellMeResultRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
     }, 50);
     } catch {
+      track('feature_error', 'personalized_help', { code: 'generation_failed' });
       setJustTellMeError('Something went wrong while creating that answer. Your question is still here—please try again.');
     } finally {
       window.setTimeout(() => {
@@ -4157,6 +4195,7 @@ default:
   };
 
   const openSituation = (situationId: string) => {
+    startFeature(helpFeature(selectedHelp), 'request');
     if (!situationList.some((item) => item.id === situationId) && routedHelpResult?.situation.id !== situationId) return;
     pushNavHistory();
     setRoutedHelpResult(null);
@@ -4179,6 +4218,7 @@ default:
   };
 
   const openDevelopmentTopic = (topicId: string) => {
+    startFeature('practical_help', 'request');
     closeCompetingViews();
     pushNavHistory();
     setSelectedDevTopic(topicId);
@@ -4192,6 +4232,7 @@ default:
   };
 
   const selectHelp = (helpId: string) => {
+    startFeature(helpFeature(helpId));
     closeCompetingViews();
     // Don't create another history entry when a user taps the same destination again.
     if (helpId !== selectedHelp || selectedSituation !== null) pushNavHistory();
@@ -4213,6 +4254,7 @@ default:
   };
 
   const openExploreHub = () => {
+    startFeature('explore');
     pushNavHistory();
     // Explore is a library of everything Breezier Days can do. It replaces the
     // older behavior of sending users straight into Learning, which made
@@ -4236,6 +4278,7 @@ default:
   };
 
   const openDayPlanner = () => {
+    startFeature('day_planner');
     closeCompetingViews();
     setActiveNav('explore');
     window.requestAnimationFrame(() => {
@@ -4251,12 +4294,14 @@ default:
   };
 
   const openTakingOver = () => {
+    startFeature('taking_over');
     closeCompetingViews();
     setActiveNav('explore');
     setShowTakingOver(true);
   };
 
   const openLearning = () => {
+    startFeature('learning');
     pushNavHistory();
     closeCompetingViews();
     setSelectedHelp('');
@@ -4278,6 +4323,7 @@ default:
 
 
   const openMealSituation = (situationId: string) => {
+    startFeature('meals', 'request');
     setShowPremiumModal(false);
     closeCompetingViews();
     setActiveNav('explore');
@@ -4308,7 +4354,10 @@ default:
   };
 
   const generateLearningPlan = (templateId?: string) => {
+    reopenedMeasurement.current = null;
+    startFeature('learning_plans', 'request');
     if (isFeatureLocked('learning-plans')) {
+      track('feature_blocked', 'learning_plans', { code: 'premium_required' });
       unlockPremium('learning-plans');
       return;
     }
@@ -4327,6 +4376,7 @@ default:
 
   const saveLearningPlan = () => {
     if (!currentLearningPlan) return;
+    if (!savedLearningPlans.some(plan => plan.id === currentLearningPlan.id)) afterStored('learning_plans', () => track('idea_save', 'learning_plans', { item_type: 'learning_plan' }));
     setSavedLearningPlans(prev => [currentLearningPlan, ...prev.filter(p => p.id !== currentLearningPlan.id)]);
   };
 
@@ -4335,6 +4385,8 @@ default:
   };
 
   const openSavedLearningPlan = (plan: LearningPlan) => {
+    reopenedMeasurement.current = 'learning_plans';
+    startFeature('learning_plans', 'reuse');
     pushNavHistory();
     setCurrentLearningPlan(plan);
     setSelectedPlanDay(null);
@@ -4399,7 +4451,8 @@ default:
   useEffect(() => {
     try {
       window.localStorage.setItem('parenting-app-children', JSON.stringify(children));
-    } catch {}
+      storedMeasurements('children', true);
+    } catch { storedMeasurements('children', false); }
     schedulePush();
   }, [children]);
 
@@ -4481,14 +4534,16 @@ default:
   useEffect(() => {
     try {
       window.localStorage.setItem('littlewise-saved-ideas', JSON.stringify(savedIdeas));
-    } catch {}
+      storedMeasurements('ideas', true);
+    } catch { storedMeasurements('ideas', false); }
     schedulePush();
   }, [savedIdeas]);
 
   useEffect(() => {
     try {
       window.localStorage.setItem('littlewise-saved-day-plans', JSON.stringify(savedDayPlans));
-    } catch {}
+      storedMeasurements('day_plans', true);
+    } catch { storedMeasurements('day_plans', false); }
     schedulePush();
   }, [savedDayPlans]);
 
@@ -4509,7 +4564,8 @@ default:
   useEffect(() => {
     try {
       window.localStorage.setItem('littlewise-learning-plans', JSON.stringify(savedLearningPlans));
-    } catch {}
+      storedMeasurements('learning_plans', true);
+    } catch { storedMeasurements('learning_plans', false); }
     schedulePush();
   }, [savedLearningPlans]);
 
@@ -4581,6 +4637,7 @@ default:
   };
 
   const applyPremiumStatus = (remote: boolean, currentPeriodEnd?: string | null, cancelAtPeriodEnd?: boolean) => {
+    if (premiumUserIdRef.current) setAnalyticsVerifiedAccount({ id: premiumUserIdRef.current, premium: remote });
     setIsPremium(remote);
     setCancelAtPeriodEnd(Boolean(cancelAtPeriodEnd));
     setPremiumUntil(currentPeriodEnd ?? null);
@@ -4625,20 +4682,25 @@ default:
       const { url, error } = await createCheckoutSession();
       setCheckoutLoading(false);
       if (error) {
+        track('feature_error', 'premium', { code: 'checkout_failed' });
         setCheckoutError(error);
         return;
       }
       if (!url) {
+        track('feature_error', 'premium', { code: 'checkout_failed' });
         setCheckoutError('Something went wrong creating your checkout session. Please try again.');
         return;
       }
+      track('premium_checkout_start', 'premium');
       setShowCheckoutConfirm(false);
       setTermsAccepted(false);
       const win = window.open(url, '_blank');
       if (!win) {
+        track('feature_blocked', 'premium', { code: 'popup_blocked' });
         setCheckoutError('Your browser blocked the checkout window. Please allow popups for this site, or use this link: ' + url);
       }
     } catch {
+      track('feature_error', 'premium', { code: 'checkout_failed' });
       setCheckoutLoading(false);
       setCheckoutError('Something went wrong. Please check your internet connection and try again.');
     }
@@ -4691,7 +4753,8 @@ default:
       ? await signInToPremium(email, premiumAuthPassword)
       : await createPremiumAccount(email, premiumAuthPassword);
     setCheckoutLoading(false);
-    if (result.error) { setPremiumAuthMessage(result.error); return; }
+    if (result.error) { track('feature_error', 'account', { code: 'auth_failed' }); setPremiumAuthMessage(result.error); return; }
+    if (premiumAuthMode === 'sign-up' && 'created' in result && result.created) track('sign_up', 'account');
     if ('confirmationRequired' in result && result.confirmationRequired) {
       setPremiumAuthMode('sign-in');
       setPremiumAuthPassword('');
@@ -4699,6 +4762,7 @@ default:
       return;
     }
     if (result.user) {
+      if (premiumAuthMode === 'sign-in') track('login', 'account', { account_state: 'unknown' });
       setPremiumUser(result.user);
       setPremiumAuthPassword('');
       setPremiumAuthMessage(null);
@@ -4714,6 +4778,7 @@ default:
   const checkSavedIdeaLimit = (): boolean => {
     if (isPremium) return true;
     if (savedIdeas.length < FREE_SAVED_IDEA_LIMIT) return true;
+    track('feature_blocked', 'saved', { code: 'free_limit' });
     unlockPremium('unlimited-saved');
     return false;
   };
@@ -4723,6 +4788,7 @@ default:
   const tryUsePersonalizedHelp = (): boolean => {
     if (isPremium) return true;
     if (personalizedHelpUsage >= FREE_PERSONALIZED_HELP_LIMIT) {
+      track('feature_blocked', 'personalized_help', { code: 'free_limit' });
       unlockPremium('unlimited-help-now');
       return false;
     }
@@ -5049,6 +5115,7 @@ const getDayLabel = (offset: number): string => {
   };
 
   const buildDayEventPlan = () => {
+    startFeature('day_planner', 'request');
     const child = selectedHelpChild ?? children[0];
     const ageId = child ? getChildGuidanceAge(child.age) : selectedAge;
     const traits = child?.traits ?? [];
@@ -5354,6 +5421,7 @@ const getDayLabel = (offset: number): string => {
       childAge: child?.age ?? '',
       traits: child?.traits ?? [],
     };
+    afterStored('day_plans', () => track('idea_save', 'day_planner', { item_type: 'day_plan' }));
     setSavedDayPlans(prev => [saved, ...prev]);
   };
 
@@ -5366,6 +5434,7 @@ const getDayLabel = (offset: number): string => {
   };
 
   const openSavedDayPlan = (plan: SavedDayPlan) => {
+    startFeature('day_planner', 'reuse');
     setOpenedSavedDayPlan(plan);
     setDayEvents(plan.events);
     setDayEventPlan(plan.plan);
@@ -5467,6 +5536,7 @@ const getDayLabel = (offset: number): string => {
   ];
 
   const buildTakingOverPlan = () => {
+    startFeature('taking_over', 'request');
     const child = selectedHelpChild;
     setTakingOverPlan(buildCaregiverPlan({
       age: takingOverAge,
@@ -5734,6 +5804,7 @@ const getDayLabel = (offset: number): string => {
 
   const buildHomeResetPlan = () => {
     if (!homeResetArea) return;
+    startFeature('home_reset', 'request');
     const data = homeResetData[homeResetArea];
     if (!data) return;
 
@@ -5775,6 +5846,7 @@ const getDayLabel = (offset: number): string => {
   };
 
   const openHomeReset = () => {
+    startFeature('home_reset');
     pushNavHistory();
     closeCompetingViews();
     setSelectedHelp('');
@@ -5872,6 +5944,8 @@ const getDayLabel = (offset: number): string => {
   const getSelectedPickyProfile = (): PickyEatingProfile => selectedHelpChild?.pickyEating ?? { safeFoods: '', learningFoods: '', avoidTextures: '', mealtimeNotes: '' };
 
   const generateEasyMeals = () => {
+    reopenedMeasurement.current = null;
+    startFeature('meals', 'request');
     if (!isPremium) { unlockPremium('food-on-hand'); return; }
     const text = premiumKitchenInput.toLowerCase();
     const profile = getSelectedPickyProfile();
@@ -5906,6 +5980,8 @@ const getDayLabel = (offset: number): string => {
   };
 
   const openSavedMeal = (item: SavedIdea) => {
+    reopenedMeasurement.current = 'meals';
+    startFeature('meals', 'reuse');
     if (item.meal) {
       setSelectedMealIdea(item.meal);
       setPremiumModalFeature('food-on-hand');
@@ -5923,6 +5999,9 @@ const getDayLabel = (offset: number): string => {
 
   const saveIdea = (idea: Omit<SavedIdea, 'id' | 'savedAt'>) => {
     if (!checkSavedIdeaLimit()) return;
+    if (!savedIdeas.some(item => item.title === idea.title && item.category === idea.category)) {
+      afterStored('ideas', () => track('idea_save', 'saved', { item_type: itemType(idea.category) }));
+    }
     const dedupeKey = `${idea.title}::${idea.category}`;
     setSavedIdeas(current => [
       { ...idea, id: Date.now(), savedAt: new Date().toLocaleDateString() },
@@ -6054,6 +6133,12 @@ const getDayLabel = (offset: number): string => {
     : [];
 
   const toggleDevelopmentActivity = (childId: number, activity: Omit<DevelopmentActivity, 'id' | 'completed'>) => {
+    const owner = children.find(child => child.id === childId);
+    if (owner) {
+      startFeature('growing_learning', 'try');
+      const marked = !(owner.development || []).find(saved => saved.title === activity.title)?.completed;
+      afterStored('children', () => track('activity_try', 'growing_learning', { state: marked ? 'marked' : 'unmarked' }));
+    }
     setChildren(current => current.map(child => {
       if (child.id !== childId) return child;
       const development = child.development || [];
@@ -6077,6 +6162,10 @@ const getDayLabel = (offset: number): string => {
         : child
     ));
   };
+
+  useEffect(() => { if (weatherError) track('feature_error', 'weather', { code: 'weather_unavailable' }); }, [weatherError]);
+  useEffect(() => { if (runtimeError) track('feature_error', 'home', { code: 'runtime_error' }); }, [runtimeError]);
+  useEffect(() => { if (syncState === 'error') track('feature_error', 'sync', { code: 'sync_failed' }); }, [syncState]);
 
   const legalContent = {
     privacy: {
@@ -6319,16 +6408,16 @@ const getDayLabel = (offset: number): string => {
 
   return (
     <>
-      <AnalyticsConsent page={activeNav} />
+      <AnalyticsConsent page={activeNav} accountState={analyticsAccount} />
       {showPremiumModal && (
         <div className="legal-overlay" role="dialog" aria-modal="true" aria-label="Unlock Breezier Days Premium">
-          <div className="legal-modal premium-modal premium-modal-v2">
+          <div data-analytics-placement="modal" data-analytics-offer={!isPremium && !passwordRecovery ? "premium" : undefined} className="legal-modal premium-modal premium-modal-v2">
             <div className="legal-modal-header premium-modal-header-v2">
               <div className="premium-modal-badge">✦</div>
               <h2>Breezier Days Premium</h2>
               <button type="button" onClick={() => setShowPremiumModal(false)} aria-label="Close">×</button>
             </div>
-            <div className="legal-modal-body premium-modal-body">
+            <div data-analytics-reopened={isPremium && selectedMealIdea && reopenedMeasurement.current === "meals" ? "meals" : undefined} className="legal-modal-body premium-modal-body">
               {premiumModalFeature && (() => {
                 const feat = premiumFeatures.find(f => f.id === premiumModalFeature);
                 if (!feat) return null;
@@ -6421,7 +6510,7 @@ const getDayLabel = (offset: number): string => {
                         <button type="button" className="premium-activate-button" style={{ marginTop: 10 }} onClick={generateEasyMeals}>✨ Give Me 2–3 Easy Ideas</button>
 
                         {premiumMealIdeas.length > 0 && (
-                          <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                          <div data-analytics-result="meals" style={{ display: 'grid', gap: 10, marginTop: 14 }}>
                             {premiumMealIdeas.map(meal => {
                               const saved = savedIdeas.some(i => i.category === 'Meal' && i.meal?.id === meal.id);
                               return (
@@ -10059,7 +10148,7 @@ const getDayLabel = (offset: number): string => {
 
         
 
-<main className="app">
+<main data-analytics-view={activeNav} className="app">
       {runtimeError && (
         <div role="alert" style={{ position: 'fixed', top: 12, left: 12, right: 12, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '10px 14px', borderRadius: 14, background: '#fff', border: '1px solid rgba(73,100,85,.18)', boxShadow: '0 8px 30px rgba(32,52,81,.14)' }}>
           <span style={{ flex: 1, textAlign: 'center', fontSize: 13 }}>{runtimeError}</span>
@@ -10114,7 +10203,7 @@ const getDayLabel = (offset: number): string => {
 
         <nav className="desktop-main-nav" aria-label="Breezier Days desktop navigation">
           <button type="button" className={activeNav === 'home' ? 'active' : ''} onClick={returnHome}>🏠 Home</button>
-          <button type="button" className={activeNav === 'help' ? 'active' : ''} onClick={openHelpNow}>💡 Help</button>
+          <button type="button" className={activeNav === 'help' ? 'active' : ''} data-analytics-view="practical_help" onClick={openHelpNow}>💡 Help</button>
           <button type="button" className={activeNav === 'explore' ? 'active' : ''} onClick={openExploreHub}>🧭 Explore</button>
           <button type="button" className={activeNav === 'saved' ? 'active' : ''} onClick={() => {
             closeCompetingViews();
@@ -10134,7 +10223,7 @@ const getDayLabel = (offset: number): string => {
         </nav>
 
         {showExploreHub && (
-          <section ref={exploreHubRef} className="explore-hub" aria-label="Everything Breezier Days can do">
+          <section ref={exploreHubRef} data-analytics-view="explore" className="explore-hub" aria-label="Everything Breezier Days can do">
             <div className="explore-hub-header">
               <p className="eyebrow">EXPLORE BREEZIER DAYS</p>
               <h2>What do you need right now?</h2>
@@ -10142,19 +10231,19 @@ const getDayLabel = (offset: number): string => {
             </div>
 
             <div className="explore-hub-grid explore-hub-grid-primary">
-              <button type="button" className="explore-hub-card explore-hub-card-featured" onClick={openHelpNow}>
+              <button type="button" className="explore-hub-card explore-hub-card-featured" data-analytics-view="practical_help" onClick={openHelpNow}>
                 <span className="explore-hub-icon">💡</span>
                 <span><strong>What Do I Do Now?</strong><small>Get a practical next step for what is happening right now.</small></span>
               </button>
-              <button type="button" className="explore-hub-card explore-hub-card-featured" onClick={openHomeReset}>
+              <button type="button" className="explore-hub-card explore-hub-card-featured" data-analytics-view="home_reset" onClick={openHomeReset}>
                 <span className="explore-hub-icon">🏠</span>
                 <span><strong>Home Reset</strong><small>Make the house feel more manageable with one realistic reset.</small></span>
               </button>
-              <button type="button" className="explore-hub-card explore-hub-card-featured" onClick={() => selectHelp('activities')}>
+              <button type="button" className="explore-hub-card explore-hub-card-featured" data-analytics-view="activities" onClick={() => selectHelp('activities')}>
                 <span className="explore-hub-icon">🎨</span>
                 <span><strong>Find an Activity</strong><small>Something realistic to do with your child right now.</small></span>
               </button>
-              <button type="button" className="explore-hub-card explore-hub-card-featured" onClick={() => selectHelp('mealtime')}>
+              <button type="button" className="explore-hub-card explore-hub-card-featured" data-analytics-view="meals" onClick={() => selectHelp('mealtime')}>
                 <span className="explore-hub-icon">🍽️</span>
                 <span><strong>Food &amp; Meals</strong><small>Help with what to make, serve, or handle next.</small></span>
               </button>
@@ -10163,30 +10252,30 @@ const getDayLabel = (offset: number): string => {
             <div className="explore-hub-section-label explore-hub-section-label-main">ALL BREEZIER DAYS TOOLS</div>
             <div className="explore-hub-subsection-label">EVERYDAY HELP</div>
             <div className="explore-hub-grid">
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('activities')}><span className="explore-hub-icon">🎨</span><span><strong>Activities</strong><small>Low-prep ideas matched to age, time, energy, and what you have.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('mealtime')}><span className="explore-hub-icon">🍽️</span><span><strong>Meals & Food</strong><small>Mealtime help, picky eating, lunch ideas, and easier options.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('sleep')}><span className="explore-hub-icon">😴</span><span><strong>Sleep</strong><small>Naps, bedtime, night waking, and practical sleep support.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('feelings')}><span className="explore-hub-icon">💛</span><span><strong>Feelings & Behavior</strong><small>Big feelings, tantrums, hitting, cooperation, and connection.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('potty')}><span className="explore-hub-icon">🚽</span><span><strong>Potty Training</strong><small>Getting started, accidents, resistance, and routines.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('health')}><span className="explore-hub-icon">🩺</span><span><strong>Health & Everyday Care</strong><small>General guidance and when to seek professional care.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('health')}><span className="explore-hub-icon">🛋️</span><span><strong>Take It Easy</strong><small>When your child is sick, teething, or simply not feeling like themselves: rest, fluids, comfort, and what to watch.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('development')}><span className="explore-hub-icon">🌱</span><span><strong>Development & Milestones</strong><small>Age-specific help with speech, movement, thinking, and social development.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('siblings')}><span className="explore-hub-icon">👧</span><span><strong>Sibling Problems</strong><small>Fighting, sharing, jealousy, boundaries, and repair.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => selectHelp('bullying')}><span className="explore-hub-icon">🛡️</span><span><strong>Bullying & Friendship</strong><small>Teasing, exclusion, conflict, school, and online problems.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="activities" onClick={() => selectHelp('activities')}><span className="explore-hub-icon">🎨</span><span><strong>Activities</strong><small>Low-prep ideas matched to age, time, energy, and what you have.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="meals" onClick={() => selectHelp('mealtime')}><span className="explore-hub-icon">🍽️</span><span><strong>Meals & Food</strong><small>Mealtime help, picky eating, lunch ideas, and easier options.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('sleep')}><span className="explore-hub-icon">😴</span><span><strong>Sleep</strong><small>Naps, bedtime, night waking, and practical sleep support.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('feelings')}><span className="explore-hub-icon">💛</span><span><strong>Feelings & Behavior</strong><small>Big feelings, tantrums, hitting, cooperation, and connection.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('potty')}><span className="explore-hub-icon">🚽</span><span><strong>Potty Training</strong><small>Getting started, accidents, resistance, and routines.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('health')}><span className="explore-hub-icon">🩺</span><span><strong>Health & Everyday Care</strong><small>General guidance and when to seek professional care.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('health')}><span className="explore-hub-icon">🛋️</span><span><strong>Take It Easy</strong><small>When your child is sick, teething, or simply not feeling like themselves: rest, fluids, comfort, and what to watch.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('development')}><span className="explore-hub-icon">🌱</span><span><strong>Development & Milestones</strong><small>Age-specific help with speech, movement, thinking, and social development.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('siblings')}><span className="explore-hub-icon">👧</span><span><strong>Sibling Problems</strong><small>Fighting, sharing, jealousy, boundaries, and repair.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('bullying')}><span className="explore-hub-icon">🛡️</span><span><strong>Bullying & Friendship</strong><small>Teasing, exclusion, conflict, school, and online problems.</small></span></button>
             </div>
 
             <div className="explore-hub-subsection-label">PLANNING & FAMILY TOOLS</div>
             <div className="explore-hub-grid">
-              <button type="button" className="explore-hub-card" onClick={openDayPlanner}><span className="explore-hub-icon">☀️</span><span><strong>Plan My Day</strong><small>Build a realistic day around routines, naps, commitments, and energy.</small><em>Premium</em></span></button>
-              <button type="button" className="explore-hub-card" onClick={openTakingOver}><span className="explore-hub-icon">👨‍👩‍👧</span><span><strong>I'm Taking Over</strong><small>A quick caregiver plan when someone else is stepping in.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => { closeCompetingViews(); setShowHandoff(true); setActiveNav('help'); window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' })); }}><span className="explore-hub-icon">🤝</span><span><strong>Caregiver Handoff</strong><small>Leave another adult a clear snapshot of what matters.</small></span></button>
-              <button type="button" className="explore-hub-card" onClick={() => { closeCompetingViews(); setActiveNav('saved'); window.requestAnimationFrame(() => savedIdeasRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' })); }}><span className="explore-hub-icon">❤️</span><span><strong>Saved</strong><small>Find your favorite answers, ideas, and plans again.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="day_planner" onClick={openDayPlanner}><span className="explore-hub-icon">☀️</span><span><strong>Plan My Day</strong><small>Build a realistic day around routines, naps, commitments, and energy.</small><em>Premium</em></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="taking_over" onClick={openTakingOver}><span className="explore-hub-icon">👨‍👩‍👧</span><span><strong>I'm Taking Over</strong><small>A quick caregiver plan when someone else is stepping in.</small></span></button>
+              <button type="button" data-analytics-view="explore" className="explore-hub-card" onClick={() => { startFeature('handoff'); closeCompetingViews(); setShowHandoff(true); setActiveNav('help'); window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' })); }}><span className="explore-hub-icon">🤝</span><span><strong>Caregiver Handoff</strong><small>Leave another adult a clear snapshot of what matters.</small></span></button>
+              <button type="button" data-analytics-view="explore" className="explore-hub-card" onClick={() => { closeCompetingViews(); setActiveNav('saved'); window.requestAnimationFrame(() => savedIdeasRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' })); }}><span className="explore-hub-icon">❤️</span><span><strong>Saved</strong><small>Find your favorite answers, ideas, and plans again.</small></span></button>
             </div>
 
             <div className="explore-hub-subsection-label">MORE BREEZIER DAYS TOOLS</div>
             <div className="explore-hub-grid">
               {premiumFeatures.filter(feature => !['unlimited-help-now','deeper-behavior','personalized-daily-plan','multi-child'].includes(feature.id)).map(feature => (
-                <button type="button" key={feature.id} className="explore-hub-card" onClick={() => {
+                <button type="button" key={feature.id} data-analytics-view="explore" className="explore-hub-card" onClick={() => {
                   if (feature.id === 'food-on-hand' || feature.id === 'picky-eating' || feature.id === 'preschool-lunch') {
                     selectHelp('mealtime');
                     return;
@@ -10307,31 +10396,31 @@ const getDayLabel = (offset: number): string => {
             <div className="for-child-area">
               <p className="for-child-label">FOR {selectedHelpChild.name.toUpperCase()}</p>
               <div className="for-child-grid">
-                <button type="button" className="for-child-chip for-child-chip-primary" onClick={() => selectHelp('help-now')}>
+                <button type="button" className="for-child-chip for-child-chip-primary" data-analytics-view="practical_help" onClick={() => selectHelp('help-now')}>
                   <span>💡</span><small>What Do I Do Now?</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={() => selectHelp('mealtime')}>
+                <button type="button" className="for-child-chip" data-analytics-view="meals" onClick={() => selectHelp('mealtime')}>
                   <span>🍎</span><small>Food</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={() => selectHelp('activities')}>
+                <button type="button" className="for-child-chip" data-analytics-view="activities" onClick={() => selectHelp('activities')}>
                   <span>🎨</span><small>Activities</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={openLearning}>
+                <button type="button" className="for-child-chip" data-analytics-view="learning" onClick={openLearning}>
                   <span>📚</span><small>Learning</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={() => selectHelp('sleep')}>
+                <button type="button" className="for-child-chip" data-analytics-view="practical_help" onClick={() => selectHelp('sleep')}>
                   <span>😴</span><small>Sleep</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={() => selectHelp('feelings')}>
+                <button type="button" className="for-child-chip" data-analytics-view="practical_help" onClick={() => selectHelp('feelings')}>
                   <span>💛</span><small>Feelings &amp; Behavior</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={() => selectHelp('health')}>
+                <button type="button" className="for-child-chip" data-analytics-view="practical_help" onClick={() => selectHelp('health')}>
                   <span>🩺</span><small>Common Problems</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={() => selectHelp('development')}>
+                <button type="button" className="for-child-chip" data-analytics-view="practical_help" onClick={() => selectHelp('development')}>
                   <span>🌱</span><small>Development</small>
                 </button>
-                <button type="button" className="for-child-chip" onClick={openHomeReset}>
+                <button type="button" className="for-child-chip" data-analytics-view="home_reset" onClick={openHomeReset}>
                   <span>🏠</span><small>Home Reset</small>
                 </button>
               </div>
@@ -10401,7 +10490,7 @@ const getDayLabel = (offset: number): string => {
               >Give me a plan</button>
 
               {takingOverPlan && (
-                <div className="taking-over-result" ref={takingOverResultRef} tabIndex={-1}>
+                <div data-analytics-result="taking_over" className="taking-over-result" ref={takingOverResultRef} tabIndex={-1}>
                   <p className="eyebrow" style={{ margin: '0 0 6px', color: '#496455' }}>{isPremium ? '✦ PREMIUM CAREGIVER PLAN' : 'CAREGIVER PLAN'}</p>
                   <h3 style={{ margin: '0 0 4px' }}>{takingOverPlan.title}</h3>
                   <p style={{ margin: '0 0 12px', color: '#68716a', fontSize: 13 }}>{takingOverPlan.context}</p>
@@ -10437,7 +10526,7 @@ const getDayLabel = (offset: number): string => {
               })()}
 
               {takingOverPlan && !isPremium && (
-                <div className="help-now-premium-upsell" style={{ marginTop: 16, padding: 18, borderRadius: 16, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 16, padding: 18, borderRadius: 16, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                   <strong>🔒 Get the Full Caregiver Plan with Premium</strong>
                   <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55, fontSize: 13 }}>
                     Premium unlocks: backup strategies, keep-them-busy ideas, next-transition planning, age-specific strategies, multiple-child strategies, low-energy caregiver plans, and the ability to save your plans.
@@ -10626,10 +10715,10 @@ const getDayLabel = (offset: number): string => {
                 <p>{dayMood === 'good' ? 'Keep the good day simple. Pick one useful thing and leave the rest for later.' : 'Tell us what is happening, or choose something practical for the next part of today.'}</p>
               </div>
               <div className="home-next-step-actions">
-                <button type="button" className="home-next-step-primary" onClick={openHelpNow}>
+                <button type="button" className="home-next-step-primary" data-analytics-view="practical_help" onClick={openHelpNow}>
                   💡 What Do I Do Now?
                 </button>
-                <button type="button" className="home-next-step-secondary" onClick={() => selectHelp('activities')}>
+                <button type="button" className="home-next-step-secondary" data-analytics-view="activities" onClick={() => selectHelp('activities')}>
                   ✨ Find an activity
                 </button>
               </div>
@@ -10643,16 +10732,16 @@ const getDayLabel = (offset: number): string => {
                 <p>What would make the next part of today a little easier?</p>
               </div>
               <div className="mood-response-actions">
-                <button type="button" className="secondary-button" onClick={() => selectHelp('activities')}>
+                <button type="button" className="secondary-button" data-analytics-view="activities" onClick={() => selectHelp('activities')}>
                   ✨ Find an activity
                 </button>
-                <button type="button" className="secondary-button" onClick={() => selectHelp('mealtime')}>
+                <button type="button" className="secondary-button" data-analytics-view="meals" onClick={() => selectHelp('mealtime')}>
                   🍽️ Find a meal
                 </button>
-                <button type="button" className="secondary-button" onClick={openHomeReset}>
+                <button type="button" className="secondary-button" data-analytics-view="home_reset" onClick={openHomeReset}>
                   🏠 Home Reset
                 </button>
-                <button type="button" className="secondary-button" onClick={openHelpNow}>
+                <button type="button" className="secondary-button" data-analytics-view="practical_help" onClick={openHelpNow}>
                   💡 I need help
                 </button>
               </div>
@@ -10660,7 +10749,7 @@ const getDayLabel = (offset: number): string => {
           )}
 
 
-        <section className="just-tell-me-section" ref={justTellMeRef}>
+        <section data-analytics-view="personalized_help" className="just-tell-me-section" ref={justTellMeRef}>
           <div className="section-heading">
             <p className="eyebrow" style={{ color: '#496455', fontWeight: 800, letterSpacing: '.12em' }}>LESS FIGURING IT OUT</p>
             <h2>Just tell me what's happening.</h2>
@@ -10726,7 +10815,7 @@ const getDayLabel = (offset: number): string => {
               </div>
 
               {justTellMeEntry === 'home' && justTellMeResult && (
-                <section className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1}>
+                <section data-analytics-result={!justTellMeLoading ? 'personalized_help' : undefined} className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1}>
                   <p className="eyebrow">HERE'S YOUR NEXT STEP</p>
                   <div className="just-tell-me-result-title">
                     <span>{justTellMeResult.emoji}</span>
@@ -10805,7 +10894,7 @@ const getDayLabel = (offset: number): string => {
                       })()}
                     </>
                   ) : (
-                    <div className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                    <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                       <strong>🔒 Get the Full Game Plan with Premium</strong>
                       <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55 }}>Premium unlocks unlimited personalized help plus full game plans: what to say, what to avoid, what to do next, why this may be happening, age-specific strategies, related help, the ability to refine advice with context, and the ability to save this answer.</p>
                       <button type="button" className="premium-unlock-button" onClick={() => unlockPremium('unlimited-help-now')}>✦ Unlock Premium — $4.99/month</button>
@@ -10815,7 +10904,7 @@ const getDayLabel = (offset: number): string => {
               )}
 
               {justTellMeEntry === 'home' && justTellMeDevResult && (
-                <section className="just-tell-me-result">
+                <section data-analytics-result={!justTellMeLoading ? 'personalized_help' : undefined} className="just-tell-me-result">
                   <p className="eyebrow">HERE'S YOUR DEVELOPMENT ANSWER</p>
                   <div className="just-tell-me-result-title">
                     <span>{justTellMeDevResult.emoji}</span>
@@ -10857,7 +10946,7 @@ const getDayLabel = (offset: number): string => {
                       );
                     })()
                   ) : (
-                    <div className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                    <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                       <strong>🔒 Get the Full Game Plan with Premium</strong>
                       <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55 }}>Premium unlocks: What to watch for, what you can do, when to ask about it, deeper context, and the ability to save this answer.</p>
                       <button type="button" className="premium-unlock-button" onClick={() => unlockPremium('unlimited-help-now')}>✦ Unlock Premium — $4.99/month</button>
@@ -10874,7 +10963,7 @@ const getDayLabel = (offset: number): string => {
           </div>
 
           <button type="button"
-            className="help-now-button"
+            data-analytics-view="practical_help" className="help-now-button"
             aria-label="What Do I Do Now?"
             onClick={() => {
               selectHelp('help-now');
@@ -10891,7 +10980,7 @@ const getDayLabel = (offset: number): string => {
           <button type="button"
             className="help-now-button taking-over-hero-button secondary-home-action"
             aria-label="I'm Taking Over"
-            onClick={() => { pushNavHistory(); setShowTakingOver(true); }}
+            onClick={() => { startFeature('taking_over'); pushNavHistory(); setShowTakingOver(true); }}
             style={{ background: 'linear-gradient(135deg, #496455, #5d7e6a)', marginTop: 10 }}
           >
             <span className="help-now-icon" style={{ background: 'rgba(255,255,255,.2)' }}>👨‍👩‍👧</span>
@@ -10955,7 +11044,7 @@ const getDayLabel = (offset: number): string => {
         {/* These destinations now live in Explore/Home's primary quick actions.
             Keeping duplicate cards here made the main experience feel longer and repetitive. */}
         {!isPremium && (
-          <section className="premium-preview-showcase">
+          <section data-analytics-offer="premium" className="premium-preview-showcase">
             <div className="premium-preview-showcase-heading">
               <span className="premium-preview-badge">✦ SEE PREMIUM IN ACTION</span>
               <h2>Breezier Days gets more useful when it knows your situation.</h2>
@@ -10970,8 +11059,8 @@ const getDayLabel = (offset: number): string => {
           </section>
         )}
 
-<section className="development-section" ref={developmentRef}>
-          <div className="development-heading">
+<section data-analytics-view="growing_learning" className="development-section" ref={developmentRef}>
+          <div data-analytics-view="growing_learning" className="development-heading">
             <div>
               <span className="development-kicker">Grow together</span>
               <h2>🧠 Growing and Learning</h2>
@@ -12041,7 +12130,7 @@ const getDayLabel = (offset: number): string => {
           </div>
 
         {showHomeReset && (
-          <section className="home-reset-section" ref={homeResetRef}>
+          <section data-analytics-view="home_reset" className="home-reset-section" ref={homeResetRef}>
             <div className="section-heading">
               <p className="eyebrow">MAKE YOUR HOME FEEL MANAGEABLE</p>
               <h2>🏠 Home Reset</h2>
@@ -12103,7 +12192,7 @@ const getDayLabel = (offset: number): string => {
                 </button>
               </>
             ) : (
-              <div className="home-reset-result">
+              <div data-analytics-result="home_reset" className="home-reset-result">
                 <div className="home-reset-result-header">
                   <span className="home-reset-result-emoji">{homeResetResult.emoji}</span>
                   <div>
@@ -12174,7 +12263,7 @@ const getDayLabel = (offset: number): string => {
                 )}
 
                 {!isPremium && (
-                  <div className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                  <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                     <strong>🔒 Get Personalized Reset Plans with Premium</strong>
                     <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55 }}>
                       Premium unlocks: room-by-room plans, if-you-have-more-time steps, age-appropriate tasks kids can help with, low-energy reset plans, before-guests reset, end-of-day reset, weekly reset plan, and the ability to save your favorite routines.
@@ -12236,7 +12325,7 @@ const getDayLabel = (offset: number): string => {
           </div>
         </section>
 
-        <section className="day-plan-section">
+        <section data-analytics-view="day_planner" className="day-plan-section">
           <div className="section-heading">
             <p className="eyebrow">PLAN MY DAY {isPremium ? '' : '· PREMIUM'}</p>
             <h2>☀️ Plan My Day</h2>
@@ -12368,7 +12457,7 @@ const getDayLabel = (offset: number): string => {
               </div>
 
               {dayEventPlan && (
-                <div ref={planMyDayRef} className="day-plan-result">
+                <div ref={planMyDayRef} data-analytics-result="day_planner" data-analytics-reopened={openedSavedDayPlan ? "day_planner" : undefined} className="day-plan-result">
                   <div className="day-plan-intro">
                     <span>💛</span>
                     <div>
@@ -12437,11 +12526,11 @@ const getDayLabel = (offset: number): string => {
                     {(dayPlanIntent === 'home-reset' || dayPlanIntent === 'plan-meal') && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                         {dayPlanIntent === 'home-reset' ? (
-                          <button type="button" className="secondary-button day-plan-action-secondary" onClick={openHomeReset}>
+                          <button type="button" className="secondary-button day-plan-action-secondary" data-analytics-view="home_reset" onClick={openHomeReset}>
                             🏠 Open Home Reset
                           </button>
                         ) : (
-                          <button type="button" className="secondary-button day-plan-action-secondary" onClick={() => selectHelp('mealtime')}>
+                          <button type="button" className="secondary-button day-plan-action-secondary" data-analytics-view="meals" onClick={() => selectHelp('mealtime')}>
                             🍽️ Plan a Meal
                           </button>
                         )}
@@ -12515,7 +12604,7 @@ const getDayLabel = (offset: number): string => {
           )}
         </section>
 
-        <section className="weather-smart-section">
+        <section data-analytics-view="weather" className="weather-smart-section">
           <div className="section-heading">
             <p className="eyebrow">ACTIVITIES FOR THE WEATHER {isPremium ? '' : '· PREMIUM'}</p>
             <h2>☀️ Weather-Smart Activities</h2>
@@ -12663,7 +12752,7 @@ const getDayLabel = (offset: number): string => {
                   </button>
 
                   {weatherResult && weatherResult.length > 0 && (
-                    <div ref={weatherResultRef} className="weather-result">
+                    <div ref={weatherResultRef} data-analytics-result={!weatherLoading ? 'weather' : undefined} className="weather-result">
                       <div className="weather-result-intro">
                         <span>🌤️</span>
                         <div>
@@ -12691,7 +12780,7 @@ const getDayLabel = (offset: number): string => {
         </section>
         </section>
 
-        <section ref={savedIdeasRef} className="saved-ideas-section">
+        <section ref={savedIdeasRef} data-analytics-view="saved" className="saved-ideas-section">
           <div className="section-heading">
             <p className="eyebrow">KEEP THE THINGS THAT WORK</p>
             <h2>❤️ Saved Ideas</h2>
@@ -12711,7 +12800,7 @@ const getDayLabel = (offset: number): string => {
           ) : (
             <div className="saved-ideas-grid">
               {savedIdeas.filter(item => savedFilter === 'All' || item.category === savedFilter).map(item => (
-                <div className={`saved-idea-card ${(item.helpNowFull || item.meal) ? 'saved-idea-clickable' : ''}`} key={item.id} onClick={item.helpNowFull ? () => { pushNavHistory(); setReopenedSavedAnswer(item); } : item.meal ? () => openSavedMeal(item) : undefined} role={(item.helpNowFull || item.meal) ? 'button' : undefined} tabIndex={(item.helpNowFull || item.meal) ? 0 : undefined}>
+                <div className={`saved-idea-card ${(item.helpNowFull || item.meal) ? 'saved-idea-clickable' : ''}`} key={item.id} onClick={item.helpNowFull ? () => { startFeature('saved', 'reuse'); pushNavHistory(); setReopenedSavedAnswer(item); } : item.meal ? () => openSavedMeal(item) : undefined} role={(item.helpNowFull || item.meal) ? 'button' : undefined} tabIndex={(item.helpNowFull || item.meal) ? 0 : undefined}>
                   <div className="saved-idea-icon">{item.emoji}</div>
                   <div className="saved-idea-copy"><small>{item.category}</small><h3>{item.title}</h3><p>{item.description}</p><span>{item.meta} · Saved {item.savedAt}</span>{item.helpNowFull && <span className="saved-idea-reopen">Tap to reopen →</span>}{item.meal && <span className="saved-idea-reopen">Tap to open meal →</span>}</div>
                   <button type="button" className="saved-idea-remove" onClick={(e) => { e.stopPropagation(); removeSavedIdea(item.id); }} aria-label={`Remove ${item.title}`}>×</button>
@@ -12825,7 +12914,7 @@ const getDayLabel = (offset: number): string => {
                 </div>
               </section>
             ) : (
-              <section ref={contentRef} className="guidance-card">
+              <section ref={contentRef} data-analytics-result={routedHelpResult ? (!justTellMeLoading ? "personalized_help" : undefined) : helpFeature(selectedHelp)} className="guidance-card">
                 <button type="button" className="back-button" onClick={goBack}>
                   ← Back to development topics
                 </button>
@@ -12909,7 +12998,7 @@ const getDayLabel = (offset: number): string => {
         ) : selectedHelp === 'activities' ? (
           <>
 
-            <section ref={(el) => { activityRef.current = el; contentRef.current = el; }} className="activity-card">
+            <section ref={(el) => { activityRef.current = el; contentRef.current = el; }} data-analytics-view="activities" data-analytics-result="activities" className="activity-card">
               <div className="activity-icon">{activity.emoji}</div>
               <div className="activity-content">
                 <div className="tag-row">
@@ -13107,7 +13196,7 @@ const getDayLabel = (offset: number): string => {
                   {justTellMeError && <p role="alert" className="form-error">{justTellMeError}</p>}
                   <p style={{ margin: '10px 0 0', color: '#68716a', fontSize: 12 }}>One sentence is enough. No need to explain everything.</p>
                   {justTellMeEntry === 'help' && justTellMeResult && (
-                    <section className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1} style={{ marginTop: 20 }}>
+                    <section data-analytics-result={!justTellMeLoading ? 'personalized_help' : undefined} className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1} style={{ marginTop: 20 }}>
                       <p className="eyebrow">HERE'S YOUR NEXT STEP</p>
                       <div className="just-tell-me-result-title"><span>{justTellMeResult.emoji}</span><div><h3>{justTellMeResult.title}</h3><small>Based on: {justTellMeTitle}</small></div></div>
                       <div className="just-tell-me-result-grid">
@@ -13119,7 +13208,7 @@ const getDayLabel = (offset: number): string => {
                     </section>
                   )}
                   {justTellMeEntry === 'help' && justTellMeDevResult && (
-                    <section className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1} style={{ marginTop: 20 }}>
+                    <section data-analytics-result={!justTellMeLoading ? 'personalized_help' : undefined} className="just-tell-me-result" ref={justTellMeResultRef} tabIndex={-1} style={{ marginTop: 20 }}>
                       <p className="eyebrow">HERE'S YOUR DEVELOPMENT ANSWER</p>
                       <div className="just-tell-me-result-title"><span>{justTellMeDevResult.emoji}</span><div><h3>{justTellMeDevResult.title}</h3><small>Based on: {justTellMeTitle}</small></div></div>
                       <div className="just-tell-me-result-grid"><div><strong>WHAT'S COMMON AT THIS AGE</strong><p>{justTellMeDevResult.common}</p></div></div>
@@ -13238,7 +13327,7 @@ const getDayLabel = (offset: number): string => {
 
               {selectedHelp === 'help-now' && (
                 <div className="handoff-section">
-                  <button type="button" className="handoff-toggle" onClick={() => setShowHandoff(s => !s)}>
+                  <button type="button" className="handoff-toggle" onClick={() => { if (!showHandoff) startFeature('handoff'); setShowHandoff(s => !s); }}>
                     <span className="handoff-toggle-icon">🤝</span>
                     <span className="handoff-toggle-text">
                       <strong>What should I know?</strong>
@@ -13514,7 +13603,7 @@ const getDayLabel = (offset: number): string => {
               )}
             </section>
           ) : (
-            <section ref={contentRef} className="guidance-card" tabIndex={-1}>
+            <section ref={contentRef} data-analytics-result={helpFeature(selectedHelp)} className="guidance-card" tabIndex={-1}>
               <button type="button"
                 className="back-button"
                 onClick={goBack}
@@ -13960,7 +14049,7 @@ const getDayLabel = (offset: number): string => {
                     <p>{currentSituation.id === 'screen-now'
                       ? 'A quick hands-on activity can make the screen transition easier. Browse low-prep learning ideas by age and interest.'
                       : 'A simple, low-energy activity can help you and your child reconnect. Browse 5-minute learning ideas that need almost no prep.'}</p>
-                    <button type="button" className="learning-suggestion-button" onClick={openLearning}>
+                    <button type="button" className="learning-suggestion-button" data-analytics-view="learning" onClick={openLearning}>
                       Browse Learning Activities →
                     </button>
                   </div>
@@ -14046,7 +14135,7 @@ const getDayLabel = (offset: number): string => {
 
               {selectedHelp === 'bullying' && (
                 <>
-                  <div className="guidance-card">
+                  <div data-analytics-result={helpFeature(selectedHelp)} className="guidance-card">
                     <p className="eyebrow">START HERE</p>
                     <h3>🛡️ First figure out what is happening</h3>
                     <p>
@@ -14097,14 +14186,14 @@ const getDayLabel = (offset: number): string => {
               <p>This topic does not have a matching card for this stage yet, so we kept you on a useful path instead of leaving a blank screen.</p>
             </div>
             <div className="route-fallback-actions">
-              <button type="button" className="primary-button" onClick={openHelpNow}>💡 What Do I Do Now?</button>
-              <button type="button" className="secondary-button" onClick={() => selectHelp('activities')}>✨ Find an Activity</button>
+              <button type="button" className="primary-button" data-analytics-view="practical_help" onClick={openHelpNow}>💡 What Do I Do Now?</button>
+              <button type="button" className="secondary-button" data-analytics-view="activities" onClick={() => selectHelp('activities')}>✨ Find an Activity</button>
             </div>
           </section>
         )}
 
         {showLearning && (
-          <section ref={learningRef} className="learning-section">
+          <section ref={learningRef} data-analytics-view="learning" className="learning-section">
             {!selectedLearningActivity ? (
               <>
                 <div className="learning-header">
@@ -14272,6 +14361,7 @@ const getDayLabel = (offset: number): string => {
                         className="learning-card"
                         onClick={() => {
                           pushNavHistory();
+                          startFeature('learning', 'request');
                           setSelectedLearningActivity(act);
                           setShowLearningFilters(false);
                           window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -14378,7 +14468,7 @@ const getDayLabel = (offset: number): string => {
                     )}
 
                     {currentLearningPlan && !selectedPlanDay && (
-                      <div className="learning-plan-view">
+                      <div data-analytics-result="learning_plans" data-analytics-reopened={reopenedMeasurement.current === "learning_plans" ? "learning_plans" : undefined} className="learning-plan-view">
                         <button type="button" className="back-button" onClick={() => { goBack(); setCurrentLearningPlan(null); }}>
                           ← Back to Learning Plans
                         </button>
@@ -14520,7 +14610,7 @@ const getDayLabel = (offset: number): string => {
                 )}
               </>
             ) : (
-              <section className="learning-detail">
+              <section data-analytics-result="learning" className="learning-detail">
                 <button type="button" className="back-button" onClick={goBack}>
                   ← Back to activities
                 </button>
@@ -14569,7 +14659,7 @@ const getDayLabel = (offset: number): string => {
         )}
 
         {reopenedSavedAnswer && reopenedSavedAnswer.helpNowFull && (
-          <div className="taking-over-modal-overlay" onClick={goBack}>
+          <div data-analytics-reopened="saved" className="taking-over-modal-overlay" onClick={goBack}>
             <div className="taking-over-modal" onClick={e => e.stopPropagation()}>
               <div className="taking-over-header">
                 <h3>{reopenedSavedAnswer.emoji} {reopenedSavedAnswer.title}</h3>
@@ -14784,7 +14874,7 @@ const getDayLabel = (offset: number): string => {
           <span className="nav-icon">🏠</span>
           <span className="nav-label">Home</span>
         </button>
-        <button type="button" className={activeNav === 'help' ? 'active' : ''} onClick={openHelpNow}>
+        <button type="button" className={activeNav === 'help' ? 'active' : ''} data-analytics-view="practical_help" onClick={openHelpNow}>
           <span className="nav-icon">💡</span>
           <span className="nav-label">Help</span>
         </button>
