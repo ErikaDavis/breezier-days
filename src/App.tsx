@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
+import AnalyticsConsent from './AnalyticsConsent';
 import { useCloudSync } from './useCloudSync';
 import { checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, requestPasswordReset, signInToPremium, updatePremiumPassword, type PremiumUser } from './supabaseClient';
 import { developmentTopics, getDevelopmentTopic, detectDevelopmentTopic, type DevelopmentGuidance } from './developmentData';
@@ -6123,8 +6124,10 @@ const getDayLabel = (offset: number): string => {
           </p>
           <p>
             Weather-Smart Activities sends device coordinates, when you grant location permission, or
-            a location you type to Open-Meteo to retrieve location and weather data. The current app
-            does not include an analytics or advertising SDK.
+            a location you type to Open-Meteo to retrieve location and weather data.
+            Google Analytics loads only after you accept optional analytics cookies. It measures
+            visits and navigation, using cookies and ordinary browser/device information. Advertising
+            signals are disabled. You can reject or withdraw analytics through Cookie settings.
           </p>
           <p>
             Because the app runs as a website, the hosting provider and browser may still process
@@ -6154,11 +6157,10 @@ const getDayLabel = (offset: number): string => {
             Breezier Days uses locally stored information to provide the features you
             request, such as personalized guidance, saved ideas, development tracking, and parenting tools.
             Breezier Days does not sell or share these stored child-profile fields for
-            advertising. If analytics is added later, it should be limited to event-level information
-            such as page visits, feature use, errors, and subscription conversion. Child names, raw
-            parenting questions, profile or temperament details, notes, and saved answers should not be
-            placed in analytics events. Any future analytics or advertising use must be disclosed before
-            it is enabled.
+            advertising. With your consent, Google Analytics receives page visits for the Home,
+            Help, Explore, and Saved sections. Child names, raw parenting questions, profile or
+            temperament details, notes, and saved answers are not included in these events.
+            Your analytics choice is saved in this browser for later visits.
           </p>
           <h3>Deletion</h3>
           <p>
@@ -6336,6 +6338,7 @@ const getDayLabel = (offset: number): string => {
 
   return (
     <>
+      <AnalyticsConsent page={activeNav} />
       {showPremiumModal && (
         <div className="legal-overlay" role="dialog" aria-modal="true" aria-label="Unlock Breezier Days Premium">
           <div className="legal-modal premium-modal premium-modal-v2">

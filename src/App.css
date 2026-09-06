@@ -2180,3 +2180,9 @@ footer {
     font-size: 12px;
   }
 }
+/* Consent controls remain available above the fixed app navigation. */
+.analytics-settings { position: fixed; right: 12px; bottom: 84px; z-index: 900; background: #fff; color: #26342c; border: 1px solid #758779; border-radius: 18px; padding: 8px 12px; font-size: 12px; }
+.analytics-consent { position: fixed; left: 16px; right: 16px; bottom: 130px; margin: auto; max-width: 540px; max-height: 65vh; overflow: auto; z-index: 10000; padding: 20px; border: 1px solid #758779; border-radius: 16px; background: #fff; color: #26342c; box-shadow: 0 6px 32px #0003; font-size: 14px; }
+.analytics-consent p { line-height: 1.5; margin: 10px 0 16px; }
+.analytics-consent > div { display: flex; flex-wrap: wrap; gap: 12px; }
+.analytics-consent button { flex: 1; padding: 12px; border: 1px solid #758779; border-radius: 8px; background: #eef3ed; color: #26342c; font-weight: 600; }
