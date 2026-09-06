@@ -6053,41 +6053,23 @@ const getDayLabel = (offset: number): string => {
     ? developmentActivitiesByAge[developmentAge]
     : [];
 
-  const addDevelopmentActivity = (activity: Omit<DevelopmentActivity, 'id' | 'completed'>) => {
-    if (selectedChildId === null) return;
-    setChildren(current => current.map(child =>
-      child.id === selectedChildId
-        ? {
-            ...child,
-            development: [
-              ...(child.development || []),
-              { ...activity, id: Date.now(), completed: false }
-            ]
-          }
-        : child
-    ));
+  const toggleDevelopmentActivity = (childId: number, activity: Omit<DevelopmentActivity, 'id' | 'completed'>) => {
+    setChildren(current => current.map(child => {
+      if (child.id !== childId) return child;
+      const development = child.development || [];
+      const existing = development.find(saved => saved.title === activity.title);
+      return {
+        ...child,
+        development: existing
+          ? development.map(saved => saved.id === existing.id ? { ...saved, completed: !saved.completed } : saved)
+          : [...development, { ...activity, id: Date.now(), completed: true }],
+      };
+    }));
   };
 
-  const toggleDevelopmentActivity = (activityId: number) => {
-    if (selectedChildId === null) return;
+  const removeDevelopmentActivity = (childId: number, activityId: number) => {
     setChildren(current => current.map(child =>
-      child.id === selectedChildId
-        ? {
-            ...child,
-            development: (child.development || []).map(activity =>
-              activity.id === activityId
-                ? { ...activity, completed: !activity.completed }
-                : activity
-            )
-          }
-        : child
-    ));
-  };
-
-  const removeDevelopmentActivity = (activityId: number) => {
-    if (selectedChildId === null) return;
-    setChildren(current => current.map(child =>
-      child.id === selectedChildId
+      child.id === childId
         ? {
             ...child,
             development: (child.development || []).filter(activity => activity.id !== activityId)
@@ -6095,7 +6077,6 @@ const getDayLabel = (offset: number): string => {
         : child
     ));
   };
-
 
   const legalContent = {
     privacy: {
@@ -11024,16 +11005,8 @@ const getDayLabel = (offset: number): string => {
                       <p>{activity.description}</p>
                       <button
                         type="button"
-                        onClick={() => {
-                          const existing = (selectedHelpChild.development || []).find(
-                            saved => saved.title === activity.title
-                          );
-                          if (existing) {
-                            toggleDevelopmentActivity(existing.id);
-                          } else {
-                            addDevelopmentActivity(activity);
-                          }
-                        }}
+                        aria-pressed={completed}
+                        onClick={() => toggleDevelopmentActivity(selectedHelpChild.id, activity)}
                       >
                         {completed ? '✓ We tried this' : '✨ Try this today'}
                       </button>
@@ -11052,7 +11025,7 @@ const getDayLabel = (offset: number): string => {
                     {(selectedHelpChild.development || []).map(activity => (
                       <div className={`development-saved-item ${activity.completed ? 'done' : ''}`} key={activity.id}>
                         <span>{activity.completed ? '✓' : '○'} {activity.title}</span>
-                        <button type="button" onClick={() => removeDevelopmentActivity(activity.id)}>×</button>
+                        <button type="button" aria-label={`Remove ${activity.title}`} onClick={() => removeDevelopmentActivity(selectedHelpChild.id, activity.id)}>×</button>
                       </div>
                     ))}
                   </div>
