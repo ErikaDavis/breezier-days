@@ -14,6 +14,24 @@ function evaluate(name, context) {
   const code=ts.transpileModule('globalThis.fn = '+functionSource(name),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   vm.runInContext(code,context);return context.fn;
 }
+
+test('shared guidance result retains personalized request attribution and excludes loading', () => {
+  let expression;
+  const visit=n=>{
+    if(ts.isJsxOpeningElement(n) && n.tagName.getText(ast)==='section') {
+      const attrs=n.attributes.properties;
+      if(attrs.some(a=>a.name?.getText(ast)==='tabIndex') && attrs.some(a=>a.name?.getText(ast)==='ref' && a.initializer?.getText(ast)==='{contentRef}')) {
+        expression=attrs.find(a=>a.name?.getText(ast)==='data-analytics-result')?.initializer?.expression?.getText(ast);
+      }
+    }
+    ts.forEachChild(n,visit);
+  };
+  visit(ast);assert.ok(expression);
+  const c=vm.createContext({routedHelpResult:{},justTellMeLoading:false,selectedHelp:'help-now',helpFeature:()=> 'practical_help'});
+  assert.equal(vm.runInContext(expression,c),'personalized_help');
+  c.justTellMeLoading=true;assert.equal(vm.runInContext(expression,c),undefined);
+  c.routedHelpResult=null;assert.equal(vm.runInContext(expression,c),'practical_help');
+});
 test('save emits only after successful persistence, never hydration, duplicates or rejected storage', () => {
   const sent=[], queue=[];let records=[];
   const context=vm.createContext({savedIdeas:records,checkSavedIdeaLimit:()=>true,

@@ -13603,7 +13603,7 @@ const getDayLabel = (offset: number): string => {
               )}
             </section>
           ) : (
-            <section ref={contentRef} data-analytics-result={helpFeature(selectedHelp)} className="guidance-card" tabIndex={-1}>
+            <section ref={contentRef} data-analytics-result={routedHelpResult ? (!justTellMeLoading ? 'personalized_help' : undefined) : helpFeature(selectedHelp)} className="guidance-card" tabIndex={-1}>
               <button type="button"
                 className="back-button"
                 onClick={goBack}
