@@ -30,7 +30,7 @@ export default function TodayInBreezierDays({ stage, traits = [], weather, weath
   const weatherNote = forecast ? weatherGuidance(forecast).planning : null;
   const recentWeather = weather?.receivedAt && now.getTime() >= weather.receivedAt && now.getTime() - weather.receivedAt < 3600000;
   const note = weatherNote ?? (recentWeather && !weatherController ? `${weather.description} at your last weather check. Here’s something easy to do indoors.`
-    : now.getDay() === 0 || now.getDay() === 6 ? 'A weekend moment to connect, at your own pace.' : 'A little connection can fit into an ordinary day.');
+    : now.getDay() === 0 || now.getDay() === 6 ? 'A weekend moment to connect, at your own pace.' : 'A small moment of connection for your day.');
   return (
     <section className="daily-brief" aria-labelledby="daily-brief-title">
       <div className="daily-brief-heading"><span className="daily-brief-sun" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4L19 5" /></svg></span><h2 id="daily-brief-title">Today in Breezier Days</h2></div>
