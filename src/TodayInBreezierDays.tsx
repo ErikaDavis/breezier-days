@@ -13,7 +13,7 @@ type Props = {
   onHelp: () => void;
 };
 
-export default function TodayInBreezierDays({ stage, traits = [], weather, weatherController, onHelp }: Props) {
+export default function TodayInBreezierDays({ stage, traits = [], weather, weatherController }: Props) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const refresh = () => setNow(new Date());
@@ -42,7 +42,6 @@ export default function TodayInBreezierDays({ stage, traits = [], weather, weath
         <div><h3>One easy activity</h3><p>{activity}</p></div>
         <div><h3>Today’s tip</h3><p>{tip}</p></div>
       </div>
-      <div className="daily-brief-help"><span>Need help right now?</span><button type="button" data-analytics-view="practical_help" onClick={onHelp}>What Do I Do Right Now? →</button></div>
     </section>
   );
 }
