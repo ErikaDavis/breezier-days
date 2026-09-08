@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
+import TodayInBreezierDays from './TodayInBreezierDays';
 import AnalyticsConsent from './AnalyticsConsent';
 import { track, startFeature, helpFeature, itemType, analyticsEnabled, analyticsEpoch, recordVerifiedConversion, type AccountState } from './analytics';
 import { useCloudSync } from './useCloudSync';
@@ -2835,7 +2836,7 @@ function App() {
   }, [premiumUser?.id, isPremium]);
 
   type WeatherUnit = 'fahrenheit' | 'celsius';
-  type WeatherReading = { temp: number; unit: WeatherUnit; code: number; description: string; locationName: string };
+  type WeatherReading = { temp: number; unit: WeatherUnit; code: number; description: string; locationName: string; receivedAt?: number };
   const defaultWeatherUnit: WeatherUnit = 'fahrenheit';
   const [weatherData, setWeatherData] = useState<WeatherReading | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -3163,7 +3164,7 @@ default:
       }
     } catch { /* reverse geocoding is best-effort */ }
 
-    return { temp, unit, code, description: weatherCodeToDescription(code), locationName };
+    return { temp, unit, code, description: weatherCodeToDescription(code), locationName, receivedAt: Date.now() };
   };
 
   const requestWeatherLocation = () => {
@@ -7236,8 +7237,8 @@ const getDayLabel = (offset: number): string => {
       .top-utility-icon { font-size: 21px; flex: 0 0 auto; }
       .top-utility-copy { min-width: 0; }
       .top-utility-copy strong, .top-utility-copy small { display: block; }
-      .top-utility-copy strong { font-size: 13px; line-height: 1.25; color: #3f5548; }
-      .top-utility-copy small { margin-top: 2px; color: #68716a; font-size: 10.5px; line-height: 1.3; font-weight: 600; }
+      .top-utility-copy strong { font-size: 14px; line-height: 1.25; color: #3f5548; }
+      .top-utility-copy small { margin-top: 2px; color: #68716a; font-size: 14px; line-height: 1.3; font-weight: 600; }
       @media (max-width: 640px) {
         .top-utility-strip { grid-template-columns: 1fr; gap: 8px; margin: 2px 0 15px; }
         .top-utility-card { padding: 10px 12px; border-radius: 14px; }
@@ -7284,7 +7285,7 @@ const getDayLabel = (offset: number): string => {
       .install-help-step span { color: #4f5d55; font-size: 14px; line-height: 1.45; }
       .install-help-note { font-size: 12px; background: #f7f3ec; padding: 10px 12px; border-radius: 12px; }
       .install-help-done { width: 100%; border: 0; border-radius: 13px; background: #496455; color: #fff; padding: 12px 16px; font: inherit; font-weight: 800; cursor: pointer; margin-top: 6px; }
-      @media (max-width: 600px) { .footer-action-grid { grid-template-columns: 1fr; } .install-help-modal { padding: 22px 18px 18px; } }
+      @media (max-width: 600px) { .footer-action-grid { grid-template-columns: 1fr; } .install-help-backdrop { padding-bottom: 90px; } .install-help-modal { padding: 22px 18px 18px; max-height: calc(100dvh - 130px); } }
 
       footer {
         text-align: center;
@@ -10196,7 +10197,7 @@ const getDayLabel = (offset: number): string => {
           {!isStandaloneApp && (
             <button type="button" className="top-utility-card" onClick={() => void openInstallExperience()}>
               <span className="top-utility-icon">📲</span>
-              <span className="top-utility-copy"><strong>Add Breezier Days to your Home Screen</strong><small>Keep help one tap away.</small></span>
+              <span className="top-utility-copy"><strong>Save Breezier Days to your Home Screen</strong><small>Keep it handy just like an app.</small></span>
             </button>
           )}
         </div>
@@ -10991,6 +10992,15 @@ const getDayLabel = (offset: number): string => {
             <b>→</b>
           </button>
         </section>
+
+        {activeNav === 'home' && !showStory && !showExploreHub && !showTakingOver && (
+          <TodayInBreezierDays
+            stage={selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : homePersonChosen ? (selectedStage === 'expecting' ? 'expecting' : selectedStage === 'newparent' ? 'baby' : selectedAge) : 'general'}
+            traits={selectedHelpChild?.traits}
+            weather={weatherData}
+            onHelp={openHelpNow}
+          />
+        )}
 
         <section className="common-problems-section">
           <div className="section-heading">
@@ -14778,13 +14788,15 @@ const getDayLabel = (offset: number): string => {
             <div className="install-help-modal" role="dialog" aria-modal="true" aria-labelledby="install-help-title">
               <button type="button" className="install-help-close" aria-label="Close install instructions" onClick={() => setShowInstallHelp(false)}>×</button>
               <div className="install-help-icon">📲</div>
-              <h2 id="install-help-title">{isStandaloneApp ? 'Breezier Days is already installed' : 'Add Breezier Days to your Home Screen'}</h2>
+              <h2 id="install-help-title">{isStandaloneApp ? 'Breezier Days is already installed' : 'Save Breezier Days to your Home Screen'}</h2>
               {isStandaloneApp ? (
                 <p>You already have the Home Screen version. You can close this window and keep using Breezier Days.</p>
               ) : (
                 <>
+                  <p>Keep it handy just like an app. This saves a shortcut to Breezier Days from your browser.</p>
                   <div className="install-help-step"><strong>iPhone or iPad — Safari</strong><span>1. Tap the Share button <b>□↑</b> at the bottom of Safari.</span><span>2. Scroll and tap <b>Add to Home Screen</b>.</span><span>3. Tap <b>Add</b>.</span></div>
                   <div className="install-help-step"><strong>Android — Chrome</strong><span>1. Tap the <b>⋮</b> menu in Chrome.</span><span>2. Tap <b>Add to Home screen</b> or <b>Install app</b>.</span><span>3. Confirm <b>Install</b>.</span></div>
+                  <div className="install-help-step"><strong>Desktop</strong><span>Use your browser’s install option if available, or bookmark Breezier Days to keep it handy.</span></div>
                   <p className="install-help-note">On iPhone, open Breezier Days in Safari for the Add to Home Screen option. Other in-app browsers may not show it.</p>
                 </>
               )}
