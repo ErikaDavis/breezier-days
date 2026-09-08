@@ -2233,3 +2233,6 @@ footer {
 .family-weather-source { font-size: 12px; color: #536258; }
 .day-plan-weather-note { padding: 14px; border: 1px solid #cbd8cd; background: #edf2ec; border-radius: 14px; font-size: 14px; line-height: 1.5; }
 @media (max-width:640px) { .family-weather-grid { grid-template-columns: 1fr; gap: 10px; } }
+
+.daily-brief .daily-good { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: #34443b; }
+.daily-good strong { color: #496455; margin-right: 5px; }

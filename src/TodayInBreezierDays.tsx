@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { dailyContent, type DailyStage } from './dailyContent';
+import { goodForToday } from './goodForToday';
 import FamilyWeatherPanel from './FamilyWeatherPanel';
 import { forecastFor, weatherGuidance } from './familyWeather';
 import type { FamilyWeatherController } from './useFamilyWeather';
@@ -36,6 +37,7 @@ export default function TodayInBreezierDays({ stage, traits = [], weather, weath
       <div className="daily-brief-heading"><span className="daily-brief-sun" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4L19 5" /></svg></span><h2 id="daily-brief-title">Today in Breezier Days</h2></div>
       <p className="daily-brief-today"><strong>Today:</strong> <time dateTime={`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`}>{now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</time> · {note}</p>
       {weatherController && <FamilyWeatherPanel controller={weatherController} baby={stage === 'baby'} />}
+      <p className="daily-good"><strong>Good for Today</strong> {goodForToday(now, forecast, weatherController?.preference?.area?.latitude)}</p>
       <div className="daily-brief-grid">
         <div><h3>One easy activity</h3><p>{activity}</p></div>
         <div><h3>Today’s tip</h3><p>{tip}</p></div>
