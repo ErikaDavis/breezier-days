@@ -5263,12 +5263,11 @@ const getDayLabel = (offset: number): string => {
       tryAddFiller('dinner', 19 * 60);
     }
 
-    // Working-parent principle: if the child is in a recurring care block or protected
-    // nap, concentrate work there. Outside those windows, prefer connection/free play.
+    // Caregiver tasks can fit around recurring care or protected rest windows.
     const careBlocks = eventsWithTimes.filter(e => /preschool|school|grandma|babysitter|childcare/i.test(e.event.label));
     if (careBlocks.length === 0 && !hasProtectedRest) {
-      const workReminder = 'If you need to work today, protect your existing childcare/nap windows rather than carving work out of family time.';
-      suggestions.push({ phase: 'evening', label: 'Working-parent note', emoji: '💛', items: [workReminder, 'When the kids are awake and available, let that time be family time whenever you can.'], timeRange: 'Flexible' });
+      const workReminder = 'If you have work, housework, errands, or other tasks to tackle today, use childcare or nap windows when you can instead of trying to squeeze everything into family time.';
+      suggestions.push({ phase: 'evening', label: 'Getting things done', emoji: '💛', items: [workReminder, 'When the kids are awake and available, give yourself permission to leave some tasks for later.'], timeRange: 'Flexible' });
     }
 
     if (!addedFillers.has('evening')) {
