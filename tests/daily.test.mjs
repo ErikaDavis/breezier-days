@@ -30,7 +30,17 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const componentContext = { exports: {}, require: name => name === './dailyContent' ? context.exports : require(name) };
+const compiled = { './dailyContent': context.exports };
+function sourceRequire(name) {
+  if (!name.startsWith('./')) return require(name);
+  if (compiled[name]) return compiled[name];
+  const file = name === './FamilyWeatherPanel' ? name + '.tsx' : name + '.ts';
+  const module = { exports: {}, require: sourceRequire };
+  vm.createContext(module);
+  vm.runInContext(ts.transpileModule(readFileSync(new URL('../src/' + file.slice(2), import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText, module);
+  compiled[name] = module.exports; return module.exports;
+}
+const componentContext = { exports: {}, require: sourceRequire };
 vm.createContext(componentContext);
 vm.runInContext(ts.transpileModule(readFileSync(new URL('../src/TodayInBreezierDays.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText, componentContext);
 test('daily card uses only fresh existing weather, falling back without a location request', () => {

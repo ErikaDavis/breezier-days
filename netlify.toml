@@ -6,6 +6,19 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Revalidate documents and unversioned assets; never retain a stale build marker.
+# Hashed Vite assets still use the browser cache after successful revalidation.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/build-version.json"
+  [headers.values]
+    Cache-Control = "no-store"
+    Netlify-CDN-Cache-Control = "no-store"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

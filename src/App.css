@@ -2201,4 +2201,35 @@ footer {
 .daily-brief-help { margin-top: 16px; padding-top: 10px; border-top: 1px solid rgba(73,100,85,.12); display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; font-size: 14px; }
 .daily-brief-help button { border: 0; background: transparent; color: #496455; font: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 44px; padding: 6px 0; text-align: left; }
 .daily-brief-help button:focus-visible { outline: 2px solid #496455; outline-offset: 4px; border-radius: 4px; }
+.app-update-notice { position: fixed; left: 16px; right: 16px; bottom: 92px; z-index: 2500; max-width: 560px; margin: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px 18px; border: 1px solid #9aaf9d; border-radius: 16px; background: #edf2ec; color: #34443b; box-shadow: 0 6px 24px #26342c20; font-size: 14px; line-height: 1.45; }
+.app-update-notice button { border: 0; background: transparent; color: #344f3e; padding: 8px 0; min-height: 44px; font: inherit; font-weight: bold; text-decoration: underline; cursor: pointer; }
+.app-update-notice button:focus-visible { outline: 2px solid #496455; outline-offset: 3px; }
 @media (max-width: 640px) { .daily-brief { padding: 18px 16px; } .daily-brief-grid { grid-template-columns: 1fr; gap: 16px; } .daily-brief h2 { font-size: 22px; } .daily-brief-heading { gap: 9px; } .daily-brief-sun { width: 34px; height: 34px; flex-basis: 34px; } .home-priority { margin-top: 12px; } }
+
+.install-invite { position: relative; min-width: 0; }
+.install-invite .top-utility-card { width: 100%; padding-right: 45px; }
+.install-invite-dismiss { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: #536258; font-size: 22px; width: 40px; min-height: 44px; cursor: pointer; }
+.family-weather { margin: 0 0 16px; padding: 12px 0; border-top: 1px solid #cbd8cd; border-bottom: 1px solid #cbd8cd; text-align: left; }
+.family-weather-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px 20px; }
+.family-weather h3 { font-size: 14px; margin: 0 0 4px; color: #496455; }
+.family-weather p { margin: 0; font-size: 14px; line-height: 1.5; }
+.family-weather button { font: inherit; font-size: 14px; min-height: 44px; padding: 8px 10px; color: #344f3e; background: #fffdf980; border: 1px solid #b9c9bb; border-radius: 10px; cursor: pointer; }
+.family-weather button:disabled { opacity: .6; cursor: default; }
+.family-weather button:focus-visible { outline: 2px solid #496455; outline-offset: 2px; }
+.family-weather-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: #536258; margin-top: 6px; }
+.family-weather-meta button { padding: 4px 0; border: 0; background: transparent; text-decoration: underline; }
+.family-weather-setup { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 14px; }
+.family-weather-setup > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.family-weather-setup > span { color: #536258; }
+.family-weather-editor { margin-top: 12px; }
+.family-weather-editor label { font-size: 14px; display: block; margin-bottom: 6px; }
+.family-weather-editor form { display: flex; gap: 8px; }
+.family-weather-editor input { min-width: 0; width: 100%; padding: 10px; border: 1px solid #9aaf9d; border-radius: 10px; font: inherit; font-size: 16px; }
+.family-weather-editor form button { flex: 0 0 auto; }
+.family-weather-places { display: grid; gap: 6px; margin: 8px 0; }
+.family-weather-places button { text-align: left; }
+.family-weather .family-weather-message { margin-top: 8px; }
+.family-weather .family-weather-privacy { font-size: 12px; margin-top: 8px; }
+.family-weather-source { font-size: 12px; color: #536258; }
+.day-plan-weather-note { padding: 14px; border: 1px solid #cbd8cd; background: #edf2ec; border-radius: 14px; font-size: 14px; line-height: 1.5; }
+@media (max-width:640px) { .family-weather-grid { grid-template-columns: 1fr; gap: 10px; } }

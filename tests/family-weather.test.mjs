@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import ts from 'typescript';
+import {readFileSync} from 'node:fs';
+const source=readFileSync(new URL('../src/familyWeather.ts',import.meta.url),'utf8');const ctx={exports:{},setTimeout,clearTimeout,AbortController};vm.createContext(ctx);vm.runInContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+const {coarseArea,forecastFor,weatherGuidance,adaptPlanToWeather,getAreaWeather}=ctx.exports;
+const day={date:'2026-09-08',high:72,low:55,code:0,rain:0,wind:3};
+test('weather area rounds before storage or transmission',()=>{const a=coarseArea(40.712876,-74.006012);assert.equal(a.latitude,40.7);assert.equal(a.longitude,-74);assert.throws(()=>coarseArea(100,0))});
+test('forecast matches exact plan date and rejects stale weather',()=>{const now=new Date(2026,8,8,12);const w={receivedAt:now.getTime(),days:[day,{...day,date:'2026-09-09',high:99}]};assert.equal(forecastFor(w,1,now).high,99);assert.equal(forecastFor(w,2,now),null);assert.equal(forecastFor(w,0,new Date(now.getTime()+3600001)),null)});
+test('storms, freezing rain, snow, heat, cold and wind provide indoor alternatives',()=>{for(const change of [{code:95},{code:66},{code:85},{high:98},{high:20},{wind:35},{rain:90}]){assert.equal(weatherGuidance({...day,...change}).indoors,true)}assert.equal(weatherGuidance(day).indoors,false);assert.match(weatherGuidance(day,true).wear,/For baby/)});
+test('weather adapts optional play without changing scheduled outings, naps or timing',()=>{const original=[{phase:'morning',items:['Take a walk outside.'],timeRange:'9–10'},{phase:'before',items:['Prepare for school outside.']},{phase:'nap',items:['Rest.']}];const next=adaptPlanToWeather(original,{...day,code:95});assert.match(next[0].items[0],/indoor/);assert.equal(next[0].timeRange,'9–10');assert.equal(next[1],original[1]);assert.equal(next[2],original[2]);assert.equal(original[0].items[0],'Take a walk outside.')});
+test('malformed forecast cannot silently become clear skies or zero degrees',async()=>{ctx.fetch=async()=>({ok:true,json:async()=>({current:{temperature_2m:null,weather_code:null},daily:{time:[]}})});await assert.rejects(getAreaWeather(coarseArea(40,-74)))});

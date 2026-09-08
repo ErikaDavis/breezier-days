@@ -1,6 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import TodayInBreezierDays from './TodayInBreezierDays';
+import { useFamilyWeather } from './useFamilyWeather';
+import FamilyWeatherPanel from './FamilyWeatherPanel';
+import { forecastFor, weatherGuidance, adaptPlanToWeather } from './familyWeather';
 import AnalyticsConsent from './AnalyticsConsent';
 import { track, startFeature, helpFeature, itemType, analyticsEnabled, analyticsEpoch, recordVerifiedConversion, type AccountState } from './analytics';
 import { useCloudSync } from './useCloudSync';
@@ -1745,6 +1748,7 @@ type DayEventPlan = {
   suggestions: DayEventSuggestion[];
   traitTips: string[];
   intro: string;
+  weatherNote?: string;
 };
 
 type SavedDayPlan = {
@@ -2185,6 +2189,9 @@ function App() {
   const { identity, schedulePush, syncState, syncError, syncPasscode, setSyncPasscode, clearSyncPasscode, remoteData } = useCloudSync();
   const [legalPage, setLegalPage] = useState<'privacy' | 'terms' | 'health' | 'delete' | 'subscription' | null>(null);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [installInviteDismissed, setInstallInviteDismissed] = useState(() => {
+    try { return localStorage.getItem('breezier-days.install-invite-dismissed') === 'yes'; } catch { return false; }
+  });
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [isStandaloneApp, setIsStandaloneApp] = useState(false);
   const [selectedChildForHelp, setSelectedChildForHelp] = useState<number | null>(() => {
@@ -2836,18 +2843,14 @@ function App() {
   }, [premiumUser?.id, isPremium]);
 
   type WeatherUnit = 'fahrenheit' | 'celsius';
-  type WeatherReading = { temp: number; unit: WeatherUnit; code: number; description: string; locationName: string; receivedAt?: number };
   const defaultWeatherUnit: WeatherUnit = 'fahrenheit';
-  const [weatherData, setWeatherData] = useState<WeatherReading | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState<string | null>(null);
+  const familyWeather = useFamilyWeather();
+  const { weather: weatherData, loading: weatherLoading, serviceError: weatherError } = familyWeather;
   const [weatherTime, setWeatherTime] = useState<5 | 15 | 20 | 30>(20);
   const [weatherEnergy, setWeatherEnergy] = useState<'high' | 'medium' | 'low'>('medium');
   const [weatherPreference, setWeatherPreference] = useState<'indoor' | 'outdoor' | 'either'>('either');
   const [weatherResult, setWeatherResult] = useState<Activity[] | null>(null);
   const [weatherResultMessage, setWeatherResultMessage] = useState('');
-  const [weatherManualInput, setWeatherManualInput] = useState('');
-  const [weatherManualMode, setWeatherManualMode] = useState(false);
 
   const [showChildSwitcher, setShowChildSwitcher] = useState(false);
   const [showTakingOver, setShowTakingOver] = useState(false);
@@ -3126,108 +3129,7 @@ default:
     return 'pleasant';
   };
 
-  const weatherCodeToDescription = (code: number): string => {
-    const map: Record<number, string> = {
-      0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
-      45: 'Foggy', 48: 'Depositing rime fog',
-      51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle',
-      56: 'Light freezing drizzle', 57: 'Dense freezing drizzle',
-      61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain',
-      66: 'Light freezing rain', 67: 'Heavy freezing rain',
-      71: 'Slight snow', 73: 'Moderate snow', 75: 'Heavy snow', 77: 'Snow grains',
-      80: 'Slight rain showers', 81: 'Moderate rain showers', 82: 'Violent rain showers',
-      85: 'Slight snow showers', 86: 'Heavy snow showers',
-      95: 'Thunderstorm', 96: 'Thunderstorm with slight hail', 99: 'Thunderstorm with heavy hail',
-    };
-    return map[code] ?? 'Unknown';
-  };
-
   const weatherUnitSymbol = (unit: WeatherUnit) => unit === 'fahrenheit' ? '°F' : '°C';
-
-  const fetchWeather = async (lat: number, lon: number, unit: WeatherUnit = defaultWeatherUnit): Promise<WeatherReading> => {
-    const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=${unit}&timezone=auto`);
-    if (!weatherRes.ok) throw new Error('Weather service unavailable');
-    const weatherJson = await weatherRes.json();
-    const temp = Math.round(weatherJson.current?.temperature_2m ?? 0);
-    const code = weatherJson.current?.weather_code ?? 0;
-
-    let locationName = 'your area';
-    try {
-      const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&language=en&format=json`);
-      if (geoRes.ok) {
-        const geoJson = await geoRes.json();
-        const r = geoJson?.results?.[0];
-        if (r) {
-          const parts = [r.name, r.admin1, r.country].filter(Boolean);
-          if (parts.length) locationName = parts.slice(0, 2).join(', ');
-        }
-      }
-    } catch { /* reverse geocoding is best-effort */ }
-
-    return { temp, unit, code, description: weatherCodeToDescription(code), locationName, receivedAt: Date.now() };
-  };
-
-  const requestWeatherLocation = () => {
-    startFeature('weather', 'open');
-    if (!navigator.geolocation) {
-      setWeatherManualMode(true);
-      return;
-    }
-    setWeatherLoading(true);
-    setWeatherError(null);
-    navigator.geolocation.getCurrentPosition(
-    async (position) => {
-        try {
-          const { latitude, longitude } = position.coords;
-          const data = await fetchWeather(latitude, longitude);
-          setWeatherData(data);
-        } catch {
-          setWeatherError('Could not load weather data. Please try again in a moment.');
-        } finally {
-          setWeatherLoading(false);
-        }
-      },
-      () => {
-        setWeatherLoading(false);
-        setWeatherManualMode(true);
-      },
-      { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 }
-    );
-  };
-
-  const fetchWeatherByLocation = async () => {
-    const query = weatherManualInput.trim();
-    if (!query) return;
-    startFeature('weather', 'open');
-    setWeatherLoading(true);
-    setWeatherError(null);
-    try {
-      const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&language=en&format=json`);
-      if (!geoRes.ok) throw new Error('Geocoding service unavailable');
-      const geoJson = await geoRes.json();
-      const r = geoJson?.results?.[0];
-      if (!r) {
-        setWeatherError(`Could not find "${query}". Try a city name or ZIP code.`);
-        return;
-      }
-      const lat = r.latitude;
-      const lon = r.longitude;
-      const parts = [r.name, r.admin1, r.country].filter(Boolean);
-      const locationName = parts.length ? parts.slice(0, 2).join(', ') : query;
-      const unit = defaultWeatherUnit;
-      const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=${unit}&timezone=auto`);
-      if (!weatherRes.ok) throw new Error('Weather service unavailable');
-      const weatherJson = await weatherRes.json();
-      const temp = Math.round(weatherJson.current?.temperature_2m ?? 0);
-      const code = weatherJson.current?.weather_code ?? 0;
-      setWeatherData({ temp, unit, code, description: weatherCodeToDescription(code), locationName });
-      setWeatherManualMode(false);
-    } catch {
-      setWeatherError('Could not load weather data. Please try again in a moment.');
-    } finally {
-      setWeatherLoading(false);
-    }
-  };
 
   const recommendWeatherActivities = () => {
     startFeature('weather', 'request');
@@ -5402,7 +5304,12 @@ const getDayLabel = (offset: number): string => {
       ...prev.filter(e => (e.dayOffset ?? 0) !== dayPlanSelectedDay),
       ...combinedEvents.map(e => ({ ...e, dayOffset: dayPlanSelectedDay })),
     ]);
-    setDayEventPlan({ events: combinedEvents.map(e => ({ ...e, dayOffset: dayPlanSelectedDay })), suggestions, traitTips, intro });
+    const forecast = forecastFor(weatherData, dayPlanSelectedDay);
+    const weatherContext = forecast ? weatherGuidance(forecast, ageId === 'baby') : null;
+    const weatherNote = forecast && weatherContext
+      ? `Forecast for ${forecast.date}: high ${forecast.high}° / low ${forecast.low}°F · ${weatherContext.condition}. ${weatherContext.planning} Wear/bring: ${weatherContext.wear}`
+      : undefined;
+    setDayEventPlan({ events: combinedEvents.map(e => ({ ...e, dayOffset: dayPlanSelectedDay })), suggestions: forecast ? adaptPlanToWeather(suggestions, forecast) : suggestions, traitTips, intro, weatherNote });
     setOpenedSavedDayPlan(null);
     window.setTimeout(() => planMyDayRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' }), 100);
   };
@@ -6173,7 +6080,7 @@ const getDayLabel = (offset: number): string => {
       title: 'Privacy Policy',
       body: (
         <>
-          <p><strong>Last updated: September 4, 2026</strong></p>
+          <p><strong>Last updated: September 8, 2026</strong></p>
           <p>
             Breezier Days is designed for adults who are parents or caregivers. It is not directed
             to children, does not provide child accounts, and should be used by an adult.
@@ -6194,8 +6101,12 @@ const getDayLabel = (offset: number): string => {
             Days does not receive or store your full payment-card number.
           </p>
           <p>
-            Weather-Smart Activities sends device coordinates, when you grant location permission, or
-            a location you type to Open-Meteo to retrieve location and weather data.
+            Weather in Today, Plan My Day, and Weather-Smart Activities uses Open-Meteo. If you choose device location,
+            coordinates are rounded to an approximate area before being sent or remembered. A city or postal-code
+            search is sent to Open-Meteo to find matching places. Only your chosen approximate weather area and
+            preference are remembered on this device; precise coordinates are not stored. You can change or forget
+            the area in the weather controls. Location, permission details, and child-specific weather guidance
+            are not sent to Google Analytics.
             Google Analytics loads only after you accept optional analytics cookies. It measures
             visits and navigation, using cookies and ordinary browser/device information. Advertising
             signals are disabled. You can reject or withdraw analytics through Cookie settings.
@@ -6357,6 +6268,7 @@ const getDayLabel = (offset: number): string => {
                 'breezier-days-personalized-help-month', 'breezier-days-personalized-help-usage',
                 'breezier-days-identity', 'breezier-days-sync-passcode', 'breezier-days-remote-data',
               ].forEach(key => window.localStorage.removeItem(key));
+              familyWeather.forget();
               setChildren([]);
               setSavedIdeas([]);
               setSavedDayPlans([]);
@@ -10194,11 +10106,14 @@ const getDayLabel = (offset: number): string => {
         </header>
 
         <div className="top-utility-strip" aria-label="Breezier Days app shortcut">
-          {!isStandaloneApp && (
+          {!isStandaloneApp && !installInviteDismissed && (
+            <div className="install-invite">
             <button type="button" className="top-utility-card" onClick={() => void openInstallExperience()}>
               <span className="top-utility-icon">📲</span>
               <span className="top-utility-copy"><strong>Save Breezier Days to your Home Screen</strong><small>Keep it handy just like an app.</small></span>
             </button>
+            <button type="button" className="install-invite-dismiss" aria-label="Dismiss Home Screen invitation" onClick={() => { setInstallInviteDismissed(true); try { localStorage.setItem('breezier-days.install-invite-dismissed', 'yes'); } catch {} }}>×</button>
+            </div>
           )}
         </div>
 
@@ -10243,6 +10158,7 @@ const getDayLabel = (offset: number): string => {
             stage={selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : homePersonChosen ? (selectedStage === 'expecting' ? 'expecting' : selectedStage === 'newparent' ? 'baby' : selectedAge) : 'general'}
             traits={selectedHelpChild?.traits}
             weather={weatherData}
+            weatherController={familyWeather}
             onHelp={openHelpNow}
           />
           </div>
@@ -12477,6 +12393,8 @@ const getDayLabel = (offset: number): string => {
                   />
                 </div>
 
+                <FamilyWeatherPanel controller={familyWeather} offset={dayPlanSelectedDay} baby={(selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : selectedAge) === 'baby'} />
+
                 <button
                   type="button"
                   className="primary-button day-plan-button"
@@ -12488,6 +12406,7 @@ const getDayLabel = (offset: number): string => {
 
               {dayEventPlan && (
                 <div ref={planMyDayRef} data-analytics-result="day_planner" data-analytics-reopened={openedSavedDayPlan ? "day_planner" : undefined} className="day-plan-result">
+                  {dayEventPlan.weatherNote && <p className="day-plan-weather-note"><strong>Weather context</strong><br />{dayEventPlan.weatherNote}</p>}
                   <div className="day-plan-intro">
                     <span>💛</span>
                     <div>
@@ -12654,77 +12573,7 @@ const getDayLabel = (offset: number): string => {
             </div>
           ) : (
             <>
-              {!weatherData && !weatherLoading && !weatherManualMode && !weatherError && (
-                <div className="weather-permission-prompt">
-                  <p>Breezier Days uses your local weather to recommend activities that fit the conditions. You can share your location or enter your city or ZIP code.</p>
-                  <button type="button" className="primary-button" onClick={requestWeatherLocation}>
-                    📍 Share my location
-                  </button>
-                  <button type="button" className="secondary-button" style={{ marginTop: 10 }} onClick={() => { setWeatherManualMode(true); setWeatherError(null); }}>
-                    ✏️ Enter city or ZIP instead
-                  </button>
-                </div>
-              )}
-
-              {!weatherData && !weatherLoading && weatherManualMode && (
-                <div className="weather-permission-prompt">
-                  <p>Enter your city or ZIP code and Breezier Days will check the weather there.</p>
-                  <div className="weather-manual-input-row">
-                    <input
-                      type="text"
-                      value={weatherManualInput}
-                      onChange={(e) => setWeatherManualInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') fetchWeatherByLocation(); }}
-                      placeholder="City or ZIP code"
-                      className="weather-manual-input"
-                    />
-                    <button type="button" className="primary-button" onClick={fetchWeatherByLocation} disabled={!weatherManualInput.trim()}>
-                      Check weather
-                    </button>
-                  </div>
-                  {navigator.geolocation && (
-                    <button type="button" className="secondary-button" style={{ marginTop: 10 }} onClick={() => { setWeatherManualMode(false); setWeatherManualInput(''); }}>
-                      ← Use my location instead
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {weatherLoading && (
-                <div className="weather-loading">
-                  <span className="weather-spinner" />
-                  <p>Checking the weather near you…</p>
-                </div>
-              )}
-
-              {weatherError && !weatherManualMode && (
-                <div className="weather-error">
-                  <p>{weatherError}</p>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', marginTop: 12 }}>
-                    <button type="button" className="secondary-button" onClick={requestWeatherLocation}>Try location again</button>
-                    <button type="button" className="secondary-button" onClick={() => { setWeatherManualMode(true); setWeatherError(null); }}>Enter city or ZIP</button>
-                  </div>
-                </div>
-              )}
-
-              {weatherError && weatherManualMode && (
-                <div className="weather-error">
-                  <p>{weatherError}</p>
-                  <div className="weather-manual-input-row" style={{ marginTop: 12 }}>
-                    <input
-                      type="text"
-                      value={weatherManualInput}
-                      onChange={(e) => setWeatherManualInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') fetchWeatherByLocation(); }}
-                      placeholder="City or ZIP code"
-                      className="weather-manual-input"
-                    />
-                    <button type="button" className="primary-button" onClick={fetchWeatherByLocation} disabled={!weatherManualInput.trim()}>
-                      Check weather
-                    </button>
-                  </div>
-                </div>
-              )}
+              <FamilyWeatherPanel controller={familyWeather} baby={(selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : selectedAge) === 'baby'} />
 
               {weatherData && (
                 <>
@@ -12739,7 +12588,7 @@ const getDayLabel = (offset: number): string => {
                       <strong>{weatherData.description} · {weatherData.temp}{weatherUnitSymbol(weatherData.unit)}</strong>
                       <small>{weatherData.locationName}</small>
                     </div>
-                    <button type="button" className="weather-refresh-button" onClick={requestWeatherLocation} title="Refresh weather">↻</button>
+                    <button type="button" className="weather-refresh-button" onClick={() => void familyWeather.refresh(true)} title="Refresh weather">↻</button>
                   </div>
 
                   <div className="weather-controls">
