@@ -10223,6 +10223,31 @@ const getDayLabel = (offset: number): string => {
           }}>❤️ Saved</button>
         </nav>
 
+        {activeNav === 'home' && !showStory && !showExploreHub && !showTakingOver && (
+          <div className="home-priority">
+          <button type="button"
+            data-analytics-view="practical_help" className="help-now-button"
+            aria-label="What Do I Do Now?"
+            onClick={() => {
+              selectHelp('help-now');
+            }}
+          >
+            <span className="help-now-icon">💡</span>
+            <span>
+              <strong>WHAT DO I DO NOW?</strong>
+              <small>Stuck with a tricky moment? Start here.</small>
+            </span>
+            <b>→</b>
+          </button>
+          <TodayInBreezierDays
+            stage={selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : homePersonChosen ? (selectedStage === 'expecting' ? 'expecting' : selectedStage === 'newparent' ? 'baby' : selectedAge) : 'general'}
+            traits={selectedHelpChild?.traits}
+            weather={weatherData}
+            onHelp={openHelpNow}
+          />
+          </div>
+        )}
+
         {showExploreHub && (
           <section ref={exploreHubRef} data-analytics-view="explore" className="explore-hub" aria-label="Everything Breezier Days can do">
             <div className="explore-hub-header">
@@ -10963,6 +10988,7 @@ const getDayLabel = (offset: number): string => {
             <p>{supportiveMessage}</p>
           </div>
 
+          {!(activeNav === 'home' && !showStory && !showExploreHub && !showTakingOver) && (
           <button type="button"
             data-analytics-view="practical_help" className="help-now-button"
             aria-label="What Do I Do Now?"
@@ -10977,6 +11003,7 @@ const getDayLabel = (offset: number): string => {
             </span>
             <b>→</b>
           </button>
+          )}
 
           <button type="button"
             className="help-now-button taking-over-hero-button secondary-home-action"
@@ -10993,14 +11020,7 @@ const getDayLabel = (offset: number): string => {
           </button>
         </section>
 
-        {activeNav === 'home' && !showStory && !showExploreHub && !showTakingOver && (
-          <TodayInBreezierDays
-            stage={selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : homePersonChosen ? (selectedStage === 'expecting' ? 'expecting' : selectedStage === 'newparent' ? 'baby' : selectedAge) : 'general'}
-            traits={selectedHelpChild?.traits}
-            weather={weatherData}
-            onHelp={openHelpNow}
-          />
-        )}
+
 
         <section className="common-problems-section">
           <div className="section-heading">

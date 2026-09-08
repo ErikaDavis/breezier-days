@@ -2187,9 +2187,13 @@ footer {
 .analytics-consent > div { display: flex; flex-wrap: wrap; gap: 12px; }
 .analytics-consent button { flex: 1; padding: 12px; border: 1px solid #758779; border-radius: 8px; background: #eef3ed; color: #26342c; font-weight: 600; }
 
-/* A quiet daily benefit below the primary help action. */
-.daily-brief { margin: 20px 0; padding: 20px 22px; background: #fffdf9; border: 1px solid rgba(73,100,85,.16); border-radius: 22px; text-align: left; color: #34433a; }
-.daily-brief h2 { margin: 0 0 8px; font-family: Georgia, serif; font-size: 22px; color: #26342c; }
+/* Home priorities: immediate help, followed by a calm daily check-in. */
+.home-priority { margin: 16px 0 24px; }
+.home-priority > .help-now-button { margin-top: 0; }
+.daily-brief { margin: 16px 0 0; padding: 20px 22px; background: linear-gradient(115deg, #edf2ec, #f7f3ec); border: 1px solid #cbd8cd; border-top: 3px solid #9aaf9d; border-radius: 22px; box-shadow: 0 6px 20px rgba(73,100,85,.055); text-align: left; color: #34433a; }
+.daily-brief-heading { display: flex; align-items: center; gap: 11px; margin-bottom: 10px; }
+.daily-brief-sun { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; background: #f6e6c9; color: #8b6634; }
+.daily-brief h2 { margin: 0; font-family: Georgia, serif; font-size: 24px; line-height: 1.2; color: #344f3e; }
 .daily-brief .daily-brief-today { font-size: 14px; margin: 0 0 16px; line-height: 1.5; color: #536258; }
 .daily-brief-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
 .daily-brief h3 { font: inherit; font-size: 14px; font-weight: 800; margin: 0 0 5px; color: #496455; }
@@ -2197,4 +2201,4 @@ footer {
 .daily-brief-help { margin-top: 16px; padding-top: 10px; border-top: 1px solid rgba(73,100,85,.12); display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; font-size: 14px; }
 .daily-brief-help button { border: 0; background: transparent; color: #496455; font: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 44px; padding: 6px 0; text-align: left; }
 .daily-brief-help button:focus-visible { outline: 2px solid #496455; outline-offset: 4px; border-radius: 4px; }
-@media (max-width: 640px) { .daily-brief { padding: 18px 16px; } .daily-brief-grid { grid-template-columns: 1fr; gap: 16px; } .daily-brief h2 { font-size: 21px; } }
+@media (max-width: 640px) { .daily-brief { padding: 18px 16px; } .daily-brief-grid { grid-template-columns: 1fr; gap: 16px; } .daily-brief h2 { font-size: 22px; } .daily-brief-heading { gap: 9px; } .daily-brief-sun { width: 34px; height: 34px; flex-basis: 34px; } .home-priority { margin-top: 12px; } }
