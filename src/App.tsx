@@ -1,3 +1,6 @@
+import RememberWhatWorks from './RememberWhatWorks';
+import PremiumFamilyTools from './PremiumFamilyTools';
+import { fingerprint, routineTopics } from './familyPersonalization';
 import { stageLearningActivities, academicPreviews } from './stageLearning';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
@@ -2262,6 +2265,7 @@ function App() {
   const toolsRef = useRef<HTMLElement | null>(null);
   const situationGridRef = useRef<HTMLDivElement | null>(null);
   const [showMoreDevelopment, setShowMoreDevelopment] = useState(false);
+  const routineDisplayRef = useRef<{key:string;text:string}|null>(null);
   const [showFullDayPlan, setShowFullDayPlan] = useState(false);
   const [activeNav, setActiveNav] = useState<'home' | 'help' | 'explore' | 'saved'>('home');
   const [justTellMeText, setJustTellMeText] = useState('');
@@ -4199,7 +4203,7 @@ default:
       window.requestAnimationFrame(() => {
         const target = document.querySelector('.day-plan-section') as HTMLElement | null;
         if (target) {
-          const disclosure = target.querySelector("details");
+          const disclosure = target.querySelector<HTMLDetailsElement>(".secondary-disclosure");
           if (disclosure) disclosure.open = true;
           const navOffset = window.innerWidth >= 701 ? 88 : 12;
           const top = target.getBoundingClientRect().top + window.scrollY - navOffset;
@@ -4852,6 +4856,7 @@ default:
     : null;
 
   const isSleepOrNapSituation = currentSituation?.id === 'sleep-now' || currentSituation?.id === 'nap-now';
+  const routineDisplayKey = `${premiumUser?.id}:${selectedHelpChild?.id}:${effectiveGuidanceAge}:${currentSituation?.id}:${fingerprint(currentGuidance?.doNow ?? '')}`;
 
   type SleepNeedQuestion = {
     id: string;
@@ -5401,7 +5406,7 @@ const getDayLabel = (offset: number): string => {
     setDayEventPlan({
       ...dayEventPlan,
       suggestions: easierSuggestions,
-      intro: dayEventPlan.intro + ' This is the simpler version — just the one most important thing in each section.',
+      intro: 'Keep what helps: one useful step in each part of your day.',
     });
   };
 
@@ -5414,8 +5419,8 @@ const getDayLabel = (offset: number): string => {
     const traitNotes = traits.map(t => dayEventTraitTips[t]).filter(Boolean);
     setDayEventPlan({
       ...dayEventPlan,
-      traitTips: [...traitNotes, ageNote, ...dayEventPlan.traitTips],
-      intro: dayEventPlan.intro + ' Added more specific tips based on your child\'s age and temperament.',
+      traitTips: [...new Set([...traitNotes, ageNote, ...dayEventPlan.traitTips])],
+      intro: dayEventPlan.intro,
     });
   };
 
@@ -5949,8 +5954,9 @@ const getDayLabel = (offset: number): string => {
     const helpCategory: SavedIdea['category'] = selectedHelp === 'mealtime' ? 'Meal' : 'Caregiver Help';
     const childId = selectedHelpChild ? selectedHelpChild.id : (selectedChildId !== null ? selectedChildId : null);
     const ageLabel = selectedHelpChild ? selectedHelpChild.age : (currentAge?.label ?? selectedAge);
+    const displayedDoNow = selectedHelp === 'help-now' && routineDisplayRef.current?.key === routineDisplayKey ? routineDisplayRef.current.text : currentGuidance.doNow;
     const fullAnswer = {
-      doNow: currentGuidance.doNow,
+      doNow: displayedDoNow,
       sayThis: currentGuidance.sayThis,
       thenTry: currentGuidance.thenTry,
       ifNotWorking: currentGuidance.ifNotWorking,
@@ -5967,7 +5973,7 @@ const getDayLabel = (offset: number): string => {
       title: currentGuidance.title,
       category: helpCategory,
       emoji: currentGuidance.emoji || currentSituation?.emoji || '💛',
-      description: currentGuidance.doNow,
+      description: displayedDoNow,
       meta: metaParts.join(' · '),
       helpNowId: currentSituation?.id,
       helpNowAge: effectiveGuidanceAge,
@@ -6098,6 +6104,7 @@ const getDayLabel = (offset: number): string => {
             to children, does not provide child accounts, and should be used by an adult.
           </p>
           <h3>Information the current app handles</h3>
+          <p>Premium’s optional Remember What Works feedback is stored only on this device, separately for each signed-in account. It stores a child reference, age stage, routine situation and strategy identifiers, a rating, and a date—not names, questions, or answer text. Up to 60 ratings are retained; ratings older than 90 days are ignored and removed the next time feedback is used. It is not sent to analytics or synced across devices. Use Feedback privacy & controls beside a supported routine answer to clear it.</p>
           <p>
             Breezier Days stores child names and ages; temperament, interests, and profile details;
             notes about what works or makes situations harder; saved ideas and answers; development
@@ -12287,6 +12294,11 @@ const getDayLabel = (offset: number): string => {
         </section>
 
         <section data-analytics-view="day_planner" className="day-plan-section">
+          {isPremium && <PremiumFamilyTools key={String(selectedChildForHelp) + ':' + dayPlanSelectedDay + ':' + premiumUser?.id} primary={selectedChildForHelp} day={getDayLabel(dayPlanSelectedDay)} children={children.map(child => ({id:child.id,name:child.name,stage:getChildGuidanceAge(child.age),traits:child.traits ?? []}))} schedule={[
+            ...dayEvents.filter(event => !event.id.startsWith('routine-') && (event.dayOffset ?? 0) === dayPlanSelectedDay).map(event => ({label:event.label,time:event.time})),
+            ...dayRoutines.filter(routine => routineAppliesToDay(routine.days,dayPlanSelectedDay)).map(routine => ({label:routine.label,time:routine.time,childId:routine.childId})),
+          ]} />}
+
           <details className="secondary-disclosure"><summary className="section-heading">            <p className="eyebrow">PLAN MY DAY {isPremium ? '' : '· PREMIUM'}</p>
             <h2>☀️ Plan My Day</h2>
             <p style={{ maxWidth: 650, margin: '8px auto 0', color: '#68716a', lineHeight: 1.55 }}>
@@ -12896,6 +12908,7 @@ const getDayLabel = (offset: number): string => {
             <section ref={(el) => { activityRef.current = el; contentRef.current = el; }} data-analytics-view="activities" data-analytics-result="activities" className="activity-card">
               <div className="activity-icon">{activity.emoji}</div>
               <div className="activity-content">
+                {isPremium && children.length > 1 && <PremiumFamilyTools activityOnly key={String(selectedChildForHelp) + ':' + premiumUser?.id} primary={selectedChildForHelp} day="Today" schedule={[]} children={children.map(child => ({id:child.id,name:child.name,stage:getChildGuidanceAge(child.age),traits:child.traits ?? []}))} />}
                 <div className="tag-row">
                   <span>{activity.category}</span>
                   <span>⏱ {activity.time}</span>
@@ -13649,7 +13662,9 @@ const getDayLabel = (offset: number): string => {
                 <div className="number">1</div>
                 <div>
                   <h4>DO THIS NOW</h4>
-                  <p style={{ whiteSpace: 'pre-line' }}>{currentGuidance?.doNow}</p>
+                  {isPremium && premiumUser && selectedHelp === 'help-now' && selectedHelpChild && currentSituation && currentGuidance && effectiveGuidanceAge !== 'baby' && routineTopics.has(currentSituation.id) && (routedHelpResult?.useSelectedChild ?? true) ?
+                    <RememberWhatWorks key={routineDisplayKey} onChoice={text => {routineDisplayRef.current = {key:routineDisplayKey,text};}} account={premiumUser.id} childId={selectedHelpChild.id} stage={effectiveGuidanceAge} topic={currentSituation.id} options={[currentGuidance.doNow, ...(currentPremiumHelp?.tryNext ?? [])].filter((text, index, all) => !!text && all.indexOf(text) === index)} />
+                    : <p style={{ whiteSpace: 'pre-line' }}>{currentGuidance?.doNow}</p>}
                 </div>
               </div>
 
