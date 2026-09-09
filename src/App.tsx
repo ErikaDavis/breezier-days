@@ -1,3 +1,4 @@
+import { explicitAge, isSchoolAge, schoolAgeAdvice, schoolLabel } from './schoolAgeContent';
 import RememberWhatWorks from './RememberWhatWorks';
 import PremiumFamilyTools from './PremiumFamilyTools';
 import { fingerprint, routineTopics } from './familyPersonalization';
@@ -1476,6 +1477,7 @@ type DevelopmentActivity = {
 };
 
 type SavedHelp = {
+  ageStage?: string;
   id: number;
   title: string;
   category: string;
@@ -1511,6 +1513,7 @@ type SavedIdea = {
   savedAt: string;
   meal?: MealIdea;
   helpNowId?: string;
+  ageStage?: string;
   helpNowAge?: string;
   helpNowChildId?: number | null;
   helpNowFull?: {
@@ -1981,8 +1984,12 @@ const dayFillerContent: Record<string, Record<AgeId, { label: string; emoji: str
   },
 };
 
-const personalizeGuidance = (guidance: Guidance, traits: TemperamentTrait[]): Guidance => {
+const personalizeGuidance = (guidance: Guidance, traits: TemperamentTrait[], stage?: string): Guidance => {
   if (!traits.length) return guidance;
+  if (stage && isSchoolAge(stage)) {
+    const tips = traits.map(t => t === 'sensitive' ? 'Reduce noise and offer a private check-in.' : t === 'strong-willed' || t === 'independent' ? 'Keep the essential boundary clear and invite their plan for meeting it.' : t === 'very-active' ? 'Build in a brief movement break when safe, then return to the agreed next step.' : t === 'slow-to-warm-up' ? 'Explain what to expect and allow a little processing time.' : '').filter(Boolean);
+    return {...guidance, doNow: [guidance.doNow, ...new Set(tips)].join(' ')};
+  }
   const has = (t: TemperamentTrait) => traits.includes(t);
   const parts: string[] = [];
   const context = `${guidance.title} ${guidance.doNow}`.toLowerCase();
@@ -2246,6 +2253,11 @@ function App() {
     setActivity(current => current.ages.includes(selectedAge) ? current : activities.find(item => item.ages.includes(selectedAge))!);
     setShowMoreDevelopment(false);
     setShowFullDayPlan(false);
+    setDayEventPlan(null);
+    setRoutedHelpResult(null);
+    setSelectedSituation(null);
+    setJustTellMeResult(null);
+    setTakingOverPlan(null);
   }, [selectedAge]);
   const [selectedNeed, setSelectedNeed] = useState<QuickNeed | null>(null);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
@@ -2960,7 +2972,7 @@ function App() {
     ? expectingHelpOptions
     : selectedStage === 'newparent'
     ? newParentHelpOptions
-    : helpOptions;
+    : helpOptions.map(option => ({...option,title:schoolLabel(option.title,selectedAge),description:schoolLabel(option.description,selectedAge)}));
 
   const isParentingStageOnly = selectedStage === 'expecting' || selectedStage === 'newparent';
 
@@ -2968,7 +2980,7 @@ function App() {
     const filterByAge = (situations: Situation[]): Situation[] => {
       if (isParentingStageOnly) return situations;
       const filtered = situations.filter(s => !s.ages || s.ages.includes(selectedAge));
-      return filtered.length > 0 ? filtered : situations;
+      return filtered;
     };
     switch (selectedHelp) {
       case 'expecting-prep':
@@ -2981,6 +2993,7 @@ function App() {
       case 'feelings':
         return filterByAge(feelingsSituations);
       case 'potty':
+        if (isSchoolAge(selectedAge)) return ['Bathroom accidents','Nighttime wetting','Bathroom avoidance'].map((title,i)=>({id:'school-bathroom-'+i,title,emoji:'🚽',guidance:Object.fromEntries(ageGroups.map(age=>[age.id,schoolAgeAdvice(title,selectedAge)!])) as Record<AgeId,Guidance>}));
         return filterByAge(pottySituations);
       case 'sleep':
         return filterByAge(sleepSituations);
@@ -2992,7 +3005,7 @@ function App() {
         return filterByAge(siblingSituations);
       case 'help-now':
         return allHelpNowSituations.filter(situation => {
-          if (situation.id === 'nap-now' && (selectedAge === 'baby' || selectedAge === 'bigkid')) {
+          if ((situation.id === 'potty-now' && isSchoolAge(selectedAge)) || (situation.id === 'nap-now' && (selectedAge === 'baby' || isSchoolAge(selectedAge)))) {
             return false;
           }
           if (!isParentingStageOnly && situation.ages && !situation.ages.includes(selectedAge)) {
@@ -3023,7 +3036,7 @@ default:
     }
   };
 
-  const situationList = getSituations();
+  const situationList = getSituations().map(item => ({...item, title: schoolLabel(item.title, selectedAge)}));
 
   const currentHelpOption = selectedHelp === 'help-now'
     ? { id: 'help-now', title: 'What Do I Do Now?', description: 'One situation. One next step.', emoji: '🚨' }
@@ -3150,7 +3163,7 @@ default:
     startFeature('weather', 'request');
     if (!weatherData) return;
     const category = weatherCodeToCategory(weatherData.code, weatherData.temp, weatherData.unit);
-    const stageAge: AgeId = ['baby', 'toddler', 'preschool', 'bigkid'].includes(selectedStage as string)
+    const stageAge: AgeId = ['baby', 'toddler', 'preschool', 'bigkid', 'tween'].includes(selectedStage as string)
       ? selectedStage as AgeId
       : selectedAge;
 
@@ -3221,19 +3234,13 @@ default:
     }, 100);
   };
 
-  const detectStage = (lower: string): AgeId | null => {
-    if (/baby|infant|newborn/.test(lower)) return 'baby';
-    if (/toddler|1 year|2 year/.test(lower)) return 'toddler';
-    if (/preschool|pre-school|3 year|4 year|5 year/.test(lower)) return 'preschool';
-    if (/big kid|school age|school-age|6 year|7 year|8 year|older kid/.test(lower)) return 'bigkid';
-    return null;
-  };
+  const detectStage = explicitAge;
 
   const detectProblem = (lower: string): string | null => {
     // Active behavior phrases must be classified before broad topic words.
     // Otherwise "throwing food" becomes generic meal-planning guidance.
     if (/(?:throw|toss|chuck|fling)\w*(?:\s+\w+){0,3}\s+(?:food|meal|dinner|lunch|snack)|(?:food|meal|dinner|lunch|snack)(?:\s+\w+){0,3}\s+(?:throw|toss|chuck|fling)\w*/.test(lower)) return 'food-throwing';
-    if (/meltdown|melt(?:s|ing)? down|tantrum|crying|screaming|freaking out|losing it|out of control/.test(lower)) return 'meltdown';
+    if (/meltdown|melt(?:s|ing)? down|tantrum|crying|screaming|yelling|shutting down|freaking out|losing it|out of control/.test(lower)) return 'meltdown';
     if (/hit|hitting|kick|kicking|bite|biting|hurt|hurting/.test(lower)) return 'hitting';
     if (/fight|fighting|arguing|won.?t share|sharing/.test(lower)) return 'fighting';
     if (/sleep|nap|bedtime|won.?t sleep|wont sleep|night waking|nightmare/.test(lower)) return 'sleep';
@@ -3269,6 +3276,13 @@ default:
   };
 
   const immediateSleepGuidance = (stage: AgeId, isNap = false): Partial<Guidance> => {
+    if (isSchoolAge(stage)) return {
+      doNow: 'Check discomfort, illness, and worries. Agree on the essential wind-down steps, put screens away, and let your child finish their routine independently. Offer a brief private check-in if something is weighing on them.',
+      sayThis: 'Let’s make room for rest. What would help you settle tonight?',
+      thenTry: 'Try quiet reading or journaling with an agreed stopping point. Keep the next check-in predictable.',
+      ifNotWorking: 'Discuss recurring sleep difficulties with your child’s healthcare professional, especially pain, breathing concerns, or daytime exhaustion.',
+      afterward: 'Review the sleep schedule, stress, and environment together when everyone is rested.'
+    };
     if (isNap) {
       return {
         doNow: stage === 'baby'
@@ -3362,6 +3376,9 @@ default:
         afterward: 'Continue watching the child and follow the exact monitoring or medical-care instructions Poison Control gives you.'
       }, deepDive: [] };
     }
+
+    const matureAdvice = schoolAgeAdvice(lower, stage);
+    if (matureAdvice) return {guidance:matureAdvice,deepDive:[]};
 
     // High-frequency situations that need their own immediate response but do
     // not need another permanent button in the interface.
@@ -3941,7 +3958,7 @@ default:
       }
     }
 
-    if (hasImmediateNeed) {
+    if (hasImmediateNeed || schoolAgeAdvice(lower, detectStage(lower) ?? selectedAge)) {
       const explicitStage = detectStage(lower);
       const stage = explicitStage ?? (selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : selectedAge);
       const multipleChildrenInQuestion = /\b(?:my kids|both (?:my )?(?:kids|children)|the kids|siblings?|brother|sister|toddler and (?:a )?baby|baby and (?:a )?toddler)\b/i.test(text);
@@ -3951,6 +3968,7 @@ default:
       const problem = detectProblem(lower);
       const specificId = getSpecificHelpNowSituationId(lower);
       const needsSpecificDynamicResult =
+        (isSchoolAge(stage) && schoolAgeAdvice(lower, stage) !== null) ||
         problem === 'food-throwing'
         || (problem === 'hitting' && /bit|kick/.test(lower))
         || (problem === 'fighting' && /toy|turn|share|grab|push|hit|bit/.test(lower))
@@ -4005,10 +4023,11 @@ default:
 
     const { guidance: rawGuidance, deepDive } = getJustTellMeGuidance(text);
     const multipleChildrenInQuestion = /\b(?:my kids|both (?:my )?(?:kids|children)|the kids|siblings?|brother|sister|toddler and (?:a )?baby|baby and (?:a )?toddler)\b/i.test(text);
-    const justTellMeTraits = isPremium && !multipleChildrenInQuestion ? (selectedHelpChild?.traits ?? []) : [];
+    const matchingSelectedStage = !detectStage(lower) || detectStage(lower) === (selectedHelpChild ? getChildGuidanceAge(selectedHelpChild.age) : selectedAge);
+    const justTellMeTraits = isPremium && !multipleChildrenInQuestion && matchingSelectedStage ? (selectedHelpChild?.traits ?? []) : [];
     const guidance = applyAboutChild(
-      personalizeGuidance(rawGuidance, justTellMeTraits),
-      isPremium && !multipleChildrenInQuestion ? selectedHelpChild?.aboutChild : undefined,
+      personalizeGuidance(rawGuidance, justTellMeTraits, detectStage(justTellMeText.toLowerCase()) ?? selectedAge),
+      isPremium && !multipleChildrenInQuestion && matchingSelectedStage ? selectedHelpChild?.aboutChild : undefined,
     );
     setJustTellMeTitle(text);
     setJustTellMeResult(guidance);
@@ -4217,7 +4236,7 @@ default:
     startFeature('taking_over');
     closeCompetingViews();
     setActiveNav('explore');
-    setShowTakingOver(true);
+    setTakingOverAge(selectedAge); setTakingOverPlan(null); setShowTakingOver(true);
   };
 
   const openLearning = () => {
@@ -4308,7 +4327,10 @@ default:
     reopenedMeasurement.current = 'learning_plans';
     startFeature('learning_plans', 'reuse');
     pushNavHistory();
-    setCurrentLearningPlan(plan);
+    const owner = children.find(child => child.id === plan.childId);
+    const stage = owner ? getChildGuidanceAge(owner.age) : selectedAge;
+    setLearningAge(stage);
+    setCurrentLearningPlan(plan.plan.every(day => day.activity.ages.includes(stage)) ? plan : buildLearningPlan(stage, owner?.traits ?? [], owner?.name, owner?.id ?? null));
     setSelectedPlanDay(null);
   };
 
@@ -4815,7 +4837,8 @@ default:
     : selectedAge);
 
   const childTraits = isPremium && (routedHelpResult?.useSelectedChild ?? true) ? (selectedHelpChild?.traits ?? []) : [];
-  const rawGuidance = currentSituation?.guidance?.[effectiveGuidanceAge];
+  const matureTopic = currentSituation && (['potty','feelings','everyday'].includes(selectedHelp) || ['meltdown-now','dressed-now','screen-now','leaving-now','won-t-listen','refuses-now'].includes(currentSituation.id)) ? schoolAgeAdvice(currentSituation.title + ' ' + currentSituation.id, effectiveGuidanceAge) : null;
+  const rawGuidance: Guidance | null = matureTopic ?? currentSituation?.guidance?.[effectiveGuidanceAge];
   const immediateSleepOverride = currentSituation?.id === 'sleep-now' || currentSituation?.id === 'bedtime-now'
     ? immediateSleepGuidance(effectiveGuidanceAge)
     : currentSituation?.id === 'nap-now'
@@ -4839,17 +4862,17 @@ default:
 
   const currentGuidance: Guidance | null = baseGuidance
     ? applyAboutChild(
-        applyCaregiverFeeling(personalizeGuidance(baseGuidance, childTraits), caregiverFeeling),
+        applyCaregiverFeeling(personalizeGuidance(baseGuidance, childTraits, effectiveGuidanceAge), caregiverFeeling),
         isPremium && (routedHelpResult?.useSelectedChild ?? true) ? selectedHelpChild?.aboutChild : undefined,
       )
     : null;
-  const currentDeepDive = currentSituation && currentGuidance
+  const currentDeepDive = matureTopic ? [{heading:'Afterward',body:matureTopic.afterward}] : currentSituation && currentGuidance
     ? (routedHelpResult?.situation.id === currentSituation.id
         ? routedHelpResult.deepDive
         : (allDeepDiveBySituation[currentSituation.id] ?? fallbackDeepDive()))
     : [];
 
-  const currentPremiumHelp: PremiumHelpNow | null = currentSituation && currentGuidance
+  const currentPremiumHelp: PremiumHelpNow | null = matureTopic ? {whyThisWorks:'A clear boundary and a voice in the plan support growing independence.',tryNext:[matureTopic.afterward],whatToAvoid:[matureTopic.avoidThis],phrasesToSay:[matureTopic.sayThis],whenToReassess:'If the problem persists, seek support appropriate to the concern.'} : currentSituation && currentGuidance
     ? (isPremiumHelpNow(allPremiumHelpNowBySituation[currentSituation.id])
         ? allPremiumHelpNowBySituation[currentSituation.id]
         : null)
@@ -4883,11 +4906,11 @@ default:
     if (!currentSituation) return [];
     const isNap = currentSituation.id === 'nap-now';
     return sleepNeedQuestions.filter(q => {
-      if (!q.ages?.includes(effectiveGuidanceAge)) return false;
+      if (!q.ages?.includes(effectiveGuidanceAge === 'tween' ? 'bigkid' : effectiveGuidanceAge)) return false;
       if (q.napOnly && !isNap) return false;
       if (q.sleepOnly && isNap) return false;
       return true;
-    });
+    }).map(q => !isSchoolAge(effectiveGuidanceAge) ? q : q.id === 'diaper' ? {...q, label:'Do they need the bathroom?',yesHint:'Give them privacy and time to use the bathroom before settling.'} : q.id === 'illness' ? {...q,label:'Are they unwell or in pain?',yesHint:'Address discomfort first and contact a healthcare professional about concerning symptoms.'} : q.id === 'connection' ? {...q,yesHint:'Offer a private check-in about worries or a few minutes of quiet reading together.'} : q);
   };
 
   const relevantSleepQuestions = isSleepOrNapSituation ? getRelevantSleepQuestions() : [];
@@ -5210,7 +5233,11 @@ const getDayLabel = (offset: number): string => {
     }
 
     for (const ewt of eventsWithTimes) {
-      const data = dayEventSuggestionsByType[ewt.event.type];
+      const data = isSchoolAge(ageId) ? {
+        before: ['Check the time and let your child gather the supplies, clothing, or belongings they need. Agree on when to be ready.'],
+        during: ['Let your child take the lead on the parts they can manage. Stay available for a specific question or practical barrier.'],
+        after: ['Leave a little breathing room. Check in about how it went, then have your child put away their belongings and identify the next step.']
+      } : dayEventSuggestionsByType[ewt.event.type];
       const beforeBlockStart = ewt.start - 30;
 
       if (beforeBlockStart > currentTime) {
@@ -5362,7 +5389,8 @@ const getDayLabel = (offset: number): string => {
     startFeature('day_planner', 'reuse');
     setOpenedSavedDayPlan(plan);
     setDayEvents(plan.events);
-    setDayEventPlan(plan.plan);
+    const owner = children.find(child => child.id === plan.childId);
+    setDayEventPlan(owner && getChildGuidanceAge(owner.age) !== getChildGuidanceAge(plan.childAge) ? null : plan.plan);
     setDayPlanDayLabel(plan.dayLabel);
     setDayPlanSelectedDay(0);
     if (plan.childId !== null) {
@@ -5462,7 +5490,7 @@ const getDayLabel = (offset: number): string => {
 
   const buildTakingOverPlan = () => {
     startFeature('taking_over', 'request');
-    const child = selectedHelpChild;
+    const child = selectedHelpChild && getChildGuidanceAge(selectedHelpChild.age) === takingOverAge ? selectedHelpChild : null;
     setTakingOverPlan(buildCaregiverPlan({
       age: takingOverAge,
       time: takingOverTime,
@@ -5922,6 +5950,15 @@ const getDayLabel = (offset: number): string => {
 
   const loadPickyProfile = () => setPickyProfileDraft(getSelectedPickyProfile());
 
+  const savedForCurrentStage = (item: SavedIdea) => {
+    const stage = item.ageStage ?? item.helpNowAge;
+    if (stage) return stage === selectedAge;
+    if (!isSchoolAge(selectedAge)) return true;
+    // Unversioned legacy child guidance cannot be certified for a new stage.
+    return item.category === 'Meal' && !/preschool|toddler|baby|potty/i.test(item.title + ' ' + item.description);
+  };
+  const currentSavedIdeas = savedIdeas.filter(savedForCurrentStage);
+  const earlierSavedIdeas = savedIdeas.filter(item => !savedForCurrentStage(item));
   const saveIdea = (idea: Omit<SavedIdea, 'id' | 'savedAt'>) => {
     if (!checkSavedIdeaLimit()) return;
     if (!savedIdeas.some(item => item.title === idea.title && item.category === idea.category)) {
@@ -5929,7 +5966,7 @@ const getDayLabel = (offset: number): string => {
     }
     const dedupeKey = `${idea.title}::${idea.category}`;
     setSavedIdeas(current => [
-      { ...idea, id: Date.now(), savedAt: new Date().toLocaleDateString() },
+      { ...idea, ageStage: idea.helpNowAge ?? selectedAge, id: Date.now(), savedAt: new Date().toLocaleDateString() },
       ...current.filter(item => !(item.title === idea.title && item.category === idea.category)),
     ]);
     setRecentlySavedAnswer(prev => new Set(prev).add(dedupeKey));
@@ -5982,7 +6019,7 @@ const getDayLabel = (offset: number): string => {
     });
 
     if (childId !== null) {
-      const saved: SavedHelp = { id: Date.now(), title: currentGuidance.title, category: selectedHelp || 'Help', savedAt: new Date().toLocaleDateString() };
+      const saved: SavedHelp = { ageStage: effectiveGuidanceAge, id: Date.now(), title: currentGuidance.title, category: selectedHelp || 'Help', savedAt: new Date().toLocaleDateString() };
       setChildren(current => current.map(child => child.id === childId ? { ...child, savedHelp: [ ...(child.savedHelp || []).filter(item => item.title !== saved.title), saved ] } : child));
     }
   };
@@ -6001,7 +6038,7 @@ const getDayLabel = (offset: number): string => {
       meta: 'Development & Milestones',
     });
     if (selectedChildId !== null) {
-      const saved: SavedHelp = { id: Date.now(), title: currentDevGuidance.title, category: 'Development', savedAt: new Date().toLocaleDateString() };
+      const saved: SavedHelp = { ageStage: selectedAge, id: Date.now(), title: currentDevGuidance.title, category: 'Development', savedAt: new Date().toLocaleDateString() };
       setChildren(current => current.map(child => child.id === selectedChildId ? { ...child, savedHelp: [ ...(child.savedHelp || []).filter(item => item.title !== saved.title), saved ] } : child));
     }
   };
@@ -6514,14 +6551,14 @@ const getDayLabel = (offset: number): string => {
                     {premiumModalFeature === 'preschool-lunch' && (
                       <div style={{ color: '#26342c' }}>
                         <p style={{ fontWeight: 800, color: '#496455', margin: '0 0 8px' }}>✓ Premium unlocked</p>
-                        <h3 style={{ margin: '0 0 8px' }}>🥪 Preschool Lunch Ideas</h3>
-                        <p style={{ color: '#68716a', lineHeight: 1.5, fontSize: 14 }}>A practical lunch system for preschool days — familiar foods, simple prep, enough variety, and realistic backup options.</p>
+                        <h3 style={{ margin: '0 0 8px' }}>🥪 {isSchoolAge(selectedAge) ? "School Lunch Ideas" : "Preschool Lunch Ideas"}</h3>
+                        <p style={{ color: '#68716a', lineHeight: 1.5, fontSize: 14 }}>A practical lunch system for school days — familiar foods, simple prep, enough variety, and realistic backup options.</p>
                         <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
                           <div className="premium-help-now-section"><h4>The easy lunch formula</h4><p>Pick <strong>1 familiar main + 1 protein/dairy food + 1 fruit or vegetable + 1 easy extra</strong>. You do not need every category every single day to make a good lunch.</p></div>
                           <div className="premium-help-now-section"><h4>8 lunch combinations to rotate</h4><ul><li>Turkey + cheese roll-ups + crackers + berries</li><li>Sunbutter sandwich + banana + yogurt</li><li>Mini pasta + peas + fruit + cheese cubes</li><li>Hummus + pita + cucumber + strawberries</li><li>Cheese quesadilla strips + avocado + berries</li><li>Chicken pieces + rice + fruit + yogurt</li><li>Hard-boiled egg + toast strips + melon + cheese</li><li>Leftover meatballs + pasta + fruit + a familiar crunchy side</li></ul></div>
-                          <div className="premium-help-now-section"><h4>If your preschooler is picky</h4><p>Keep one reliable food in the lunchbox. Do not make the lunch more adventurous just because they have refused something lately. Rotate one small change at a time and let familiar foods carry the meal.</p></div>
+                          <div className="premium-help-now-section"><h4>If your child is picky</h4><p>Keep one reliable food in the lunchbox. Do not make the lunch more adventurous just because they have refused something lately. Rotate one small change at a time and let familiar foods carry the meal.</p></div>
                           <div className="premium-help-now-section"><h4>Make mornings easier</h4><p>Choose 3–5 lunches your child generally eats and repeat them. Prep fruit, cheese, or sandwich components ahead when it helps. A boring lunch that gets eaten is more useful than an impressive lunch that comes home untouched.</p></div>
-                          <div className="premium-help-now-section"><h4>Before you pack</h4><p>Follow your preschool's allergy policy and any rules about refrigeration, choking hazards, and foods they do not allow.</p></div>
+                          <div className="premium-help-now-section"><h4>Before you pack</h4><p>Follow your school’s allergy policy and any rules about refrigeration, choking hazards, and foods they do not allow.</p></div>
                         </div>
                         <button type="button" className="premium-activate-button" onClick={() => openMealSituation('preschool-lunch')}>Open Lunch Ideas →</button>
                       </div>
@@ -6599,7 +6636,7 @@ const getDayLabel = (offset: number): string => {
                     <span className="premium-preview-emoji">😤</span>
                     <div>
                       <strong>"My 3-year-old keeps melting down when I say no."</strong>
-                      <small>Preschooler · Feelings &amp; Behavior</small>
+                      <small>{isSchoolAge(selectedAge) ? 'School-age child' : 'Preschooler'} · Feelings &amp; Behavior</small>
                     </div>
                   </div>
                   <div className="premium-preview-comparison">
@@ -10216,8 +10253,8 @@ const getDayLabel = (offset: number): string => {
               <button type="button" className="explore-hub-card" data-analytics-view="activities" onClick={() => selectHelp('activities')}><span className="explore-hub-icon">🎨</span><span><strong>Activities</strong><small>Low-prep ideas matched to age, time, energy, and what you have.</small></span></button>
               <button type="button" className="explore-hub-card" data-analytics-view="meals" onClick={() => selectHelp('mealtime')}><span className="explore-hub-icon">🍽️</span><span><strong>Meals & Food</strong><small>Mealtime help, picky eating, lunch ideas, and easier options.</small></span></button>
               <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('sleep')}><span className="explore-hub-icon">😴</span><span><strong>Sleep</strong><small>Naps, bedtime, night waking, and practical sleep support.</small></span></button>
-              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('feelings')}><span className="explore-hub-icon">💛</span><span><strong>Feelings & Behavior</strong><small>Big feelings, tantrums, hitting, cooperation, and connection.</small></span></button>
-              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('potty')}><span className="explore-hub-icon">🚽</span><span><strong>Potty Training</strong><small>Getting started, accidents, resistance, and routines.</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('feelings')}><span className="explore-hub-icon">💛</span><span><strong>Feelings & Behavior</strong><small>{isSchoolAge(selectedAge) ? "Big emotions, boundaries, repair, and problem-solving." : "Big feelings, tantrums, hitting, cooperation, and connection."}</small></span></button>
+              <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('potty')}><span className="explore-hub-icon">🚽</span><span><strong>{isSchoolAge(selectedAge) ? "Bathroom issues" : "Potty Training"}</strong><small>Getting started, accidents, resistance, and routines.</small></span></button>
               <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('health')}><span className="explore-hub-icon">🩺</span><span><strong>Health & Everyday Care</strong><small>General guidance and when to seek professional care.</small></span></button>
               <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('health')}><span className="explore-hub-icon">🛋️</span><span><strong>Take It Easy</strong><small>When your child is sick, teething, or simply not feeling like themselves: rest, fluids, comfort, and what to watch.</small></span></button>
               <button type="button" className="explore-hub-card" data-analytics-view="practical_help" onClick={() => selectHelp('development')}><span className="explore-hub-icon">🌱</span><span><strong>Development & Milestones</strong><small>Age-specific help with speech, movement, thinking, and social development.</small></span></button>
@@ -10251,7 +10288,7 @@ const getDayLabel = (offset: number): string => {
                   unlockPremium(feature.id);
                 }}>
                   <span className="explore-hub-icon">{feature.emoji}</span>
-                  <span><strong>{feature.title}</strong><small>{feature.description}</small>{feature.free ? <em>Free</em> : <em>Premium</em>}</span>
+                  <span><strong>{schoolLabel(feature.title,selectedAge)}</strong><small>{schoolLabel(feature.description,selectedAge)}</small>{feature.free ? <em>Free</em> : <em>Premium</em>}</span>
                 </button>
               ))}
             </div>
@@ -10757,7 +10794,7 @@ const getDayLabel = (offset: number): string => {
                   onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleJustTellMe();
                   }}
-                  placeholder="Example: My toddler is melting down and I need to make dinner."
+                  placeholder={isSchoolAge(selectedAge) ? "Example: My child is overwhelmed after school." : "Example: My toddler is melting down and I need to make dinner."}
                   rows={3}
                 />
                 <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('home')} disabled={!justTellMeText.trim() || justTellMeLoading} aria-busy={justTellMeLoading}>
@@ -10769,10 +10806,10 @@ const getDayLabel = (offset: number): string => {
               <div className="just-tell-me-examples">
                 <button type="button" onClick={() => setJustTellMeText('My toddler is melting down and I need to make dinner.')}>"Toddler meltdown + dinner"</button>
                 <button type="button" onClick={() => setJustTellMeText('My baby will not sleep and I am exhausted.')}>"Baby won't sleep"</button>
-                <button type="button" onClick={() => setJustTellMeText('My preschooler is picky and I need an easy lunch.')}>"Preschool lunch"</button>
+                <button type="button" onClick={() => setJustTellMeText(isSchoolAge(selectedAge) ? "My school-age child needs an easy packed lunch." : "My preschooler is picky and I need an easy lunch.")}>{isSchoolAge(selectedAge) ? "School lunch" : "Preschool lunch"}</button>
                 <button type="button" onClick={() => setJustTellMeText('My kids are fighting and I need to get something done.')}>"Kids fighting + busy"</button>
                 <button type="button" onClick={() => setJustTellMeText('I have no energy and my toddler needs something to do.')}>"No energy + toddler"</button>
-                <button type="button" onClick={() => setJustTellMeText('My 3-year-old doesn\'t speak as clearly as other kids.')}>"Preschooler speech concern"</button>
+                <button type="button" onClick={() => setJustTellMeText(isSchoolAge(selectedAge) ? "My child is struggling with homework. What can help?" : "My preschooler has a speech concern.")}>{isSchoolAge(selectedAge) ? "Homework feels hard" : "Preschooler speech concern"}</button>
               </div>
 
               {justTellMeEntry === 'home' && justTellMeResult && (
@@ -10943,7 +10980,7 @@ const getDayLabel = (offset: number): string => {
           <button type="button"
             className="help-now-button taking-over-hero-button secondary-home-action"
             aria-label="I'm Taking Over"
-            onClick={() => { startFeature('taking_over'); pushNavHistory(); setShowTakingOver(true); }}
+            onClick={() => { startFeature('taking_over'); pushNavHistory(); setTakingOverAge(selectedAge); setTakingOverPlan(null); setShowTakingOver(true); }}
             style={{ background: 'linear-gradient(135deg, #496455, #5d7e6a)', marginTop: 10 }}
           >
             <span className="help-now-icon" style={{ background: 'rgba(255,255,255,.2)' }}>👨‍👩‍👧</span>
@@ -10962,7 +10999,7 @@ const getDayLabel = (offset: number): string => {
             <p className="eyebrow">QUICK HELP</p>
             <h2>What's happening right now?</h2>
             <p style={{ maxWidth: 650, margin: '8px auto 0', color: '#68716a', lineHeight: 1.55 }}>
-              Choose a problem below to get a practical next step — sleep, food, feelings, potty, health, and more.
+              Choose a problem below to get a practical next step — sleep, food, feelings, bathroom issues, health, and more.
             </p>
           </div>
           <div className="help-dropdowns">
@@ -11170,7 +11207,7 @@ const getDayLabel = (offset: number): string => {
                       ['napTime', '😴 Nap / quiet time', '1:00–2:30 PM'],
                       ['meals', '🍎 Meals / appetite', 'Ate well / picky at lunch'],
                       ['mood', '😊 Mood', 'Happy / tired / clingy'],
-                      ['potty', '🚽 Potty', 'Accident / went well / N/A'],
+                      ['potty', isSchoolAge(selectedAge) ? '🚽 Bathroom' : '🚽 Potty', 'Anything useful to note'],
                     ].map(([field, label, placeholder]) => (
                       <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: 5, color: '#496455', fontSize: 12, fontWeight: 700 }}>
                         {label}
@@ -11224,7 +11261,7 @@ const getDayLabel = (offset: number): string => {
                   {(child.savedHelp || []).length === 0 ? (
                     <p className="empty-saved-help">No saved help yet. When something is useful, tap ❤️ Save this help.</p>
                   ) : (
-                    <div className="saved-help-list">
+                    <details className="saved-help-list"><summary>Saved history — includes earlier stages</summary>
                       {(child.savedHelp || []).map(saved => (
                         <div className="saved-help-item" key={saved.id}>
                           <div>
@@ -11240,7 +11277,7 @@ const getDayLabel = (offset: number): string => {
                           </button>
                         </div>
                       ))}
-                    </div>
+                    </details>
                   )}
                 </div>
 
@@ -12336,7 +12373,8 @@ const getDayLabel = (offset: number): string => {
 
                 <p className="day-plan-event-prompt">What is happening {dayPlanSelectedDay === 0 ? 'today' : dayPlanSelectedDay === 1 ? 'tomorrow' : 'on ' + getDayLabel(dayPlanSelectedDay).toLowerCase()}?</p>
                 <div className="day-plan-event-chips">
-                  {dayEventTypes.map((t) => {
+                  {dayEventTypes.map((original) => {
+                    const t = isSchoolAge(selectedAge) && original.id === 'preschool' ? {...original,label:'School'} : original;
                     const visibleDayEvents = dayEvents.filter(e => (e.dayOffset ?? 0) === dayPlanSelectedDay);
                     const added = visibleDayEvents.some(e => e.type === t.id);
                     return (
@@ -12702,11 +12740,11 @@ const getDayLabel = (offset: number): string => {
           </div>
           {savedIdeas.length === 0 ? (
             <div className="saved-empty-state"><div>💛</div><strong>Nothing saved yet?</strong><p>When something feels useful, tap <b>Save this idea</b>. It will live here for next time.</p></div>
-          ) : savedIdeas.filter(item => savedFilter === 'All' || item.category === savedFilter).length === 0 ? (
+          ) : currentSavedIdeas.filter(item => savedFilter === 'All' || item.category === savedFilter).length === 0 ? (
             <div className="saved-empty-state"><div>🫶</div><strong>Nothing saved in this category yet.</strong><p>Save something useful and it will show up here.</p></div>
           ) : (
             <div className="saved-ideas-grid">
-              {savedIdeas.filter(item => savedFilter === 'All' || item.category === savedFilter).map(item => (
+              {currentSavedIdeas.filter(item => savedFilter === 'All' || item.category === savedFilter).map(item => (
                 <div className={`saved-idea-card ${(item.helpNowFull || item.meal) ? 'saved-idea-clickable' : ''}`} key={item.id} onClick={item.helpNowFull ? () => { startFeature('saved', 'reuse'); pushNavHistory(); setReopenedSavedAnswer(item); } : item.meal ? () => openSavedMeal(item) : undefined} role={(item.helpNowFull || item.meal) ? 'button' : undefined} tabIndex={(item.helpNowFull || item.meal) ? 0 : undefined}>
                   <div className="saved-idea-icon">{item.emoji}</div>
                   <div className="saved-idea-copy"><small>{item.category}</small><h3>{item.title}</h3><p>{item.description}</p><span>{item.meta} · Saved {item.savedAt}</span>{item.helpNowFull && <span className="saved-idea-reopen">Tap to reopen →</span>}{item.meal && <span className="saved-idea-reopen">Tap to open meal →</span>}</div>
@@ -12715,6 +12753,7 @@ const getDayLabel = (offset: number): string => {
               ))}
             </div>
           )}
+          {earlierSavedIdeas.length > 0 && <details className="secondary-disclosure"><summary>Saved history — earlier stage or age not recorded ({earlierSavedIdeas.length})</summary><p>These originals are preserved as history, not current recommendations. Get fresh help for your child’s current stage.</p>{earlierSavedIdeas.map(item => <div className="saved-idea-card" key={item.id}><div><h3>{item.title}</h3><p>{item.description}</p>{item.helpNowFull && <button type="button" onClick={() => { startFeature('saved', 'reuse'); pushNavHistory(); setReopenedSavedAnswer(item); }}>View saved original</button>}{item.meal && <button type="button" onClick={() => openSavedMeal(item)}>View saved meal</button>}<small>Saved {item.savedAt}</small><button type="button" onClick={() => removeSavedIdea(item.id)} aria-label={`Remove ${item.title}`}>×</button></div></div>)}</details>}
         </section>
 
         <section className="little-wins-section little-wins-compact">
@@ -13094,7 +13133,7 @@ const getDayLabel = (offset: number): string => {
                       onKeyDown={(e) => {
                         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleJustTellMe('help');
                       }}
-                      placeholder="Example: My toddler is melting down and I need to make dinner."
+                      placeholder={isSchoolAge(selectedAge) ? "Example: My child is overwhelmed after school." : "Example: My toddler is melting down and I need to make dinner."}
                       rows={3}
                     />
                     <button type="button" className="just-tell-me-cta" onClick={() => handleJustTellMe('help')} disabled={!justTellMeText.trim() || justTellMeLoading} aria-busy={justTellMeLoading}>
@@ -13171,7 +13210,7 @@ const getDayLabel = (offset: number): string => {
                   <div className="no-situation-quick-links" aria-label="Choose a topic">
                     <p className="no-situation-quick-links-intro">Choose what is closest to what you need help with:</p>
                     <div className="no-situation-quick-links-grid">
-                      {helpOptions.map((help) => (
+                      {visibleHelpOptions.map((help) => (
                         <button
                           key={help.id}
                           type="button"
@@ -13267,7 +13306,7 @@ const getDayLabel = (offset: number): string => {
                           onChange={(e) => setHandoff(h => ({ ...h, napSchedule: e.target.value }))} />
                       </div>
                       <div className="handoff-field">
-                        <label>Diaper / potty</label>
+                        <label>{isSchoolAge(selectedAge) ? "Bathroom needs" : "Diaper / potty"}</label>
                         <input type="text" placeholder="e.g. Last wet diaper 11 AM, no BM yet" value={handoff.diaper}
                           onChange={(e) => setHandoff(h => ({ ...h, diaper: e.target.value }))} />
                       </div>
@@ -13303,7 +13342,7 @@ const getDayLabel = (offset: number): string => {
                           {filled.map(([key, val]) => {
                             const labels: Record<string, string> = {
                               wakeTime: 'Wake-up', lastFeeding: 'Last feeding', lastNap: 'Last nap',
-                              napSchedule: 'Nap schedule', diaper: 'Diaper/potty', activities: 'Activities',
+                              napSchedule: 'Nap schedule', diaper: isSchoolAge(selectedAge) ? 'Bathroom needs' : 'Diaper/potty', activities: 'Activities',
                               unusual: 'Unusual', notes: 'Notes',
                             };
                             return <li key={String(key)}><strong>{labels[String(key)] ?? String(key)}:</strong> {val}</li>;
@@ -13548,7 +13587,7 @@ const getDayLabel = (offset: number): string => {
                           {filled.map(([key, val]) => {
                             const labels: Record<string, string> = {
                               wakeTime: 'Wake-up', lastFeeding: 'Last feeding', lastNap: 'Last nap',
-                              napSchedule: 'Nap schedule', diaper: 'Diaper/potty', activities: 'Activities',
+                              napSchedule: 'Nap schedule', diaper: isSchoolAge(selectedAge) ? 'Bathroom needs' : 'Diaper/potty', activities: 'Activities',
                               unusual: 'Unusual', notes: 'Notes',
                             };
                             return <li key={String(key)}><strong>{labels[String(key)] ?? String(key)}:</strong> {val}</li>;
@@ -13988,7 +14027,7 @@ const getDayLabel = (offset: number): string => {
                   ].map((feature) => (
                     <div className="premium-locked-card-sm" key={feature.id}>
                       <div className="premium-locked-icon-sm">{feature.emoji}</div>
-                      <strong>{feature.title}</strong>
+                      <strong>{schoolLabel(feature.title,selectedAge)}</strong>
                       <p>{feature.text}</p>
                       <button
                         type="button"
@@ -14576,6 +14615,7 @@ const getDayLabel = (offset: number): string => {
                 <button type="button" onClick={goBack}>×</button>
               </div>
               <p className="taking-over-subtitle">
+                {!savedForCurrentStage(reopenedSavedAnswer) && <strong>Saved history, not current-stage advice. Get fresh help for today. </strong>}
                 {reopenedSavedAnswer.meta} · Saved {reopenedSavedAnswer.savedAt}
                 {reopenedSavedAnswer.helpNowChildId != null && (() => {
                   const child = children.find(c => c.id === reopenedSavedAnswer.helpNowChildId);

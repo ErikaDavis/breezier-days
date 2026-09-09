@@ -34,7 +34,7 @@ test('shared guidance result retains personalized request attribution and exclud
 });
 test('save emits only after successful persistence, never hydration, duplicates or rejected storage', () => {
   const sent=[], queue=[];let records=[];
-  const context=vm.createContext({savedIdeas:records,checkSavedIdeaLimit:()=>true,
+  const context=vm.createContext({selectedAge:"bigkid",savedIdeas:records,checkSavedIdeaLimit:()=>true,
     afterStored:(_bucket,fn)=>queue.push(fn),track:(...args)=>sent.push(args),itemType:()=> 'activity',
     setSavedIdeas:fn=>{records=fn(records);context.savedIdeas=records;},setRecentlySavedAnswer(){},setSavedAnswerToast(){},
     savedAnswerTimeoutRef:{current:null},window:{setTimeout:()=>1,clearTimeout(){}}});
@@ -75,3 +75,4 @@ test('sync remains local-first and never sends stored profiles to analytics', ()
   let result=render();assert.equal(result.syncPasscode,'private-code');assert.equal(result.remoteData.children[0].name,'Private');
   result.schedulePush();result=render();assert.equal(result.syncState,'synced');assert.equal(result.remoteData.children[0].name,'Private');
 });
+

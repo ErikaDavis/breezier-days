@@ -1,3 +1,4 @@
+import { schoolAgeAdvice } from './schoolAgeContent';
 export type CareAge = 'baby' | 'toddler' | 'preschool' | 'bigkid' | 'tween' | 'multiple';
 export type CareEnergy = 'high' | 'some' | 'exhausted';
 
@@ -50,7 +51,7 @@ export function buildCaregiverPlan(input: { age: CareAge; time: string; situatio
   const band = input.age === 'baby' ? 'baby' : input.age === 'multiple' ? 'multiple' : input.age === 'toddler' || input.age === 'preschool' ? 'little' : 'older';
   const activityCount = minutes <= 10 ? 1 : minutes <= 60 ? 2 : scenario.activities[band].length;
   const steps = scenario.activities[band].slice(0, activityCount);
-  if (minutes >= 60) steps.push('Add food, diaper/toilet, or rest at the next natural break; do not stretch one activity across the whole window.');
+  if (minutes >= 60) steps.push(band === 'older' ? 'Leave time for food, bathroom breaks, and downtime between activities.' : 'Add food, diaper/toilet, or rest at the next natural break; do not stretch one activity across the whole window.');
   if (minutes >= 180) steps.push('Plan a second distinct block after food/rest and leave 15–30 minutes for quiet decompression.');
   if (input.energy === 'exhausted') steps.unshift('Choose the seated, nearby, lowest-setup version and use a timer; good-enough care is the goal.');
   else if (input.energy === 'high' && input.situation !== 'quiet' && input.situation !== 'bedtime' && input.situation !== 'meltdown') steps.unshift('Use your energy for setup or active connection now, then step back when the activity is working.');
@@ -58,19 +59,20 @@ export function buildCaregiverPlan(input: { age: CareAge; time: string; situatio
   const traits = input.traits ?? [];
   if (traits.includes('sensitive') || traits.includes('slow-to-warm-up')) steps.push('Keep stimulation low, preview changes, and allow extra time before expecting participation.');
   if (traits.includes('very-active') && !['quiet', 'bedtime', 'meltdown'].includes(input.situation)) steps.push('Include purposeful movement before asking for sitting or waiting.');
-  if (traits.includes('strong-willed') || traits.includes('independent')) steps.push('Offer two acceptable choices and give them ownership of one job.');
+  if (traits.includes('strong-willed') || traits.includes('independent')) steps.push(band === 'older' ? 'Agree on the essential task and let them decide how to carry it out.' : 'Offer two acceptable choices and give them ownership of one job.');
   if (input.whatWorks?.trim()) steps.push(`Use what the family says usually works: ${input.whatWorks.trim()}.`);
   else if (input.enjoys?.trim() && ['bored', 'quiet', 'independent', 'one-on-one'].includes(input.situation)) steps.push(`When possible, connect the activity to this interest: ${input.enjoys.trim()}.`);
 
+  const mature = schoolAgeAdvice(input.situation, input.age);
   const energyText = input.energy === 'exhausted' ? 'low-energy' : input.energy === 'some' ? 'moderate-energy' : 'higher-energy';
   return {
-    title: scenario.title,
+    title: mature?.title ?? scenario.title,
     context: `${input.time} · ${energyText} · ${ageLabel[input.age]}`,
-    doThisFirst: scenario.immediate,
-    whatToSay: scenario.say,
+    doThisFirst: mature?.doNow ?? scenario.immediate,
+    whatToSay: mature?.sayThis ?? scenario.say,
     timelineLabel: minutes <= 10 ? `FOR THE NEXT ${minutes} MINUTES` : minutes === 30 ? 'FOR THE NEXT 30 MINUTES' : minutes === 60 ? 'FOR THE NEXT HOUR' : input.time.toUpperCase(),
     steps,
-    planB: scenario.planB,
+    planB: mature?.afterward ?? (band === 'older' && input.situation === 'quiet' ? 'Try a short walk, quiet music, or stretching before returning to the activity.' : scenario.planB),
     avoid: scenario.avoid,
     finish: scenario.finish,
     childNote: input.childName ? `For ${input.childName}${traits.length ? ` · temperament: ${traits.join(', ')}` : ''}` : undefined,
