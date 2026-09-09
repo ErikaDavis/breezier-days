@@ -1,3 +1,4 @@
+import { stageLearningActivities, academicPreviews } from './stageLearning';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import TodayInBreezierDays from './TodayInBreezierDays';
@@ -316,7 +317,7 @@ const ageGroups: AgeGroup[] = [
   { id: 'toddler', label: 'Toddler', range: '1–2 years', emoji: '🧸' },
   { id: 'preschool', label: 'Preschool', range: '3–5 years', emoji: '🦋' },
   { id: 'bigkid', label: 'School Age', range: '6–8 years', emoji: '🎒' },
-  { id: 'tween', label: 'Tween', range: '9–12 years', emoji: '🧩' },
+  { id: 'tween', label: 'Tween', range: '9–11 years', emoji: '🧩' },
 ];
 
 const helpOptions: HelpOption[] = [
@@ -338,7 +339,7 @@ const stageOptions: Array<{ id: ParentingStageId; label: string; description: st
   { id: 'toddler', label: 'Toddler', description: 'Big feelings, routines, independence & play', emoji: '🧸', range: '1–2 years' },
   { id: 'preschool', label: 'Preschooler', description: 'Behavior, learning, friendships & getting ready for school', emoji: '🦋', range: '3–5 years' },
   { id: 'bigkid', label: 'School Age', description: 'Growing independence, emotions, school & family life', emoji: '🎒', range: '6–8 years' },
-  { id: 'tween', label: 'Tween', description: 'Growing independence, friendships, school stress & identity', emoji: '🧩', range: '9–12 years' },
+  { id: 'tween', label: 'Tween', description: 'Growing independence, friendships, school stress & identity', emoji: '🧩', range: '9–11 years' },
 ];
 
 const expectingHelpOptions: HelpOption[] = [
@@ -371,11 +372,12 @@ const newParentHelpOptions: HelpOption[] = [
 ];
 
 const activities: Activity[] = [
-  { title: 'Tummy Time Treasure Hunt', description: 'Place a few safe, interesting objects within reach and encourage your baby to look, reach, roll, and explore.', time: '10–15 min', category: 'Play', emoji: '👶', ages: ['baby'], needs: ['play', 'lowest-effort'], effort: 'Low', setup: '2 min', mess: 'None' },
-  { title: 'Mirror & Face Play', description: 'Sit with your baby near a baby-safe mirror. Make faces, smile, talk, and let your baby watch you.', time: '10–15 min', category: 'Connection', emoji: '🪞', ages: ['baby'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Sing & Clap Together', description: 'Sing a favorite song while gently clapping, bouncing, or moving along with the rhythm.', time: '5–10 min', category: 'Music', emoji: '🎵', ages: ['baby'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Read a Board Book', description: 'Choose a sturdy board book and let your baby touch the pages while you point to pictures and talk.', time: '10–20 min', category: 'Reading', emoji: '📚', ages: ['baby'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Peekaboo', description: 'Try peekaboo with your hands, a blanket, or around a doorway.', time: '5–10 min', category: 'Play', emoji: '🙈', ages: ['baby'], needs: ['play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  ...stageLearningActivities.filter(a => a.ages[0] === 'bigkid' || a.ages[0] === 'tween').map(a => ({title: a.title, description: a.steps[0], time: a.time, category: a.location === 'Outdoor' ? 'Outside' : 'Learning', emoji: a.emoji, ages: a.ages as AgeId[], needs: (a.location === 'Outdoor' ? ['outside', 'play', 'lowest-effort'] : a.category === 'independence' ? ['get-things-done', 'play', 'lowest-effort'] : ['calm', 'play', 'get-things-done', 'lowest-effort']) as QuickNeed[], effort: 'Low', setup: 'None', mess: 'Low'})),
+  { title: 'Tummy Time Treasure Hunt', description: "While your baby is awake, stay beside them for a short tummy-time session on a clear, firm surface. Place a baby-safe toy in view; looking counts, and reaching or rolling is optional. Stop at tired cues.", time: "1–5 min", category: 'Play', emoji: '👶', ages: ['baby'], needs: ['play', 'lowest-effort'], effort: 'Low', setup: '2 min', mess: 'None' },
+  { title: 'Mirror & Face Play', description: "Support your awake baby comfortably near a baby-safe mirror. Smile and talk softly; watching is enough. Follow their interest.", time: "2–5 min", category: 'Connection', emoji: '🪞', ages: ['baby'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Sing & Clap Together', description: "Sing softly to your comfortably supported, awake baby. You can clap gently; your baby can watch or listen without needing to copy.", time: "2–5 min", category: 'Music', emoji: '🎵', ages: ['baby'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Read a Board Book', description: "Share one page of a sturdy board book with your awake baby. Name a picture and pause; looking or listening counts.", time: "2–5 min", category: 'Reading', emoji: '📚', ages: ['baby'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Peekaboo', description: "Cover your own face with your hands, then smile and reveal it. Let your baby watch; stop if they seem startled or tired.", time: "1–5 min", category: 'Play', emoji: '🙈', ages: ['baby'], needs: ['play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Kitchen Helper', description: 'Give your little one a simple safe job such as washing fruit, stirring, or carrying a lightweight item.', time: '15–20 min', category: 'Everyday', emoji: '🥣', ages: ['toddler', 'preschool'], needs: ['get-things-done', 'play'], effort: 'Low', setup: '2 min', mess: 'Low' },
   { title: 'Color Hunt', description: 'Choose one color and search around the house or yard for things that match.', time: '10–20 min', category: 'Play', emoji: '🌈', ages: ['toddler', 'preschool'], needs: ['play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Pretend Doctor', description: 'Set up a pretend doctor visit and let your child check your heartbeat or care for a stuffed animal.', time: '15–30 min', category: 'Pretend', emoji: '🩺', ages: ['toddler', 'preschool'], needs: ['play'], effort: 'Low', setup: '2 min', mess: 'Low' },
@@ -384,54 +386,54 @@ const activities: Activity[] = [
   { title: 'Sidewalk Art', description: 'Use sidewalk chalk to draw roads, flowers, animals, or a giant picture together.', time: '20–40 min', category: 'Creative', emoji: '🖍️', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Medium', setup: '5 min+', mess: 'Some' },
   { title: 'Mini Obstacle Course', description: 'Create a course for jumping, crawling, balancing, and moving using things you already have.', time: '20–30 min', category: 'Active', emoji: '🏃', ages: ['preschool', 'bigkid'], needs: ['play', 'outside'], effort: 'Medium', setup: '5 min+', mess: 'Some' },
   { title: 'Make Up a Story', description: 'Pick three random objects and create a silly story together.', time: '15–25 min', category: 'Imagination', emoji: '📖', ages: ['preschool', 'bigkid'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Treasure Hunt', description: 'Hide a few objects and make simple clues for your child to follow.', time: '20–30 min', category: 'Adventure', emoji: '🗺️', ages: ['bigkid'], needs: ['outside', 'play'], effort: 'Medium', setup: '5 min+', mess: 'Low' },
-  { title: 'Sock Toss Laundry Game', description: 'While you fold laundry, let your child make a basket with rolled socks and practice tossing them in.', time: '10–15 min', category: 'Everyday', emoji: '🧺', ages: ['toddler', 'preschool', 'bigkid'], needs: ['get-things-done', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Treasure Hunt', description: "Let your child design a short clue trail or map for someone else. Test whether the clues work, then revise one that is too easy or unclear.", time: '20–30 min', category: 'Adventure', emoji: '🗺️', ages: ['bigkid'], needs: ['outside', 'play'], effort: 'Medium', setup: '5 min+', mess: 'Low' },
+  { title: 'Sock Toss Laundry Game', description: 'While you fold laundry, let your child make a basket with rolled socks and practice tossing them in.', time: '10–15 min', category: 'Everyday', emoji: '🧺', ages: ['toddler', 'preschool'], needs: ['get-things-done', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Water Play at the Sink', description: 'Set out a few cups and a small amount of water for supervised pouring and scooping play.', time: '10–15 min', category: 'Calm', emoji: '💧', ages: ['toddler', 'preschool'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Low', setup: '2 min', mess: 'Some' },
-  { title: 'Backyard Nature Basket', description: 'Collect safe natural items such as leaves, pinecones, and sticks, then sort or talk about what you found.', time: '15–25 min', category: 'Outside', emoji: '🌿', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'Low' },
-  { title: 'Bubble Chase', description: 'Blow bubbles and let your child chase, pop, count, or try to catch them.', time: '15–20 min', category: 'Outside', emoji: '🫧', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'Low' },
-  { title: 'Kitchen Transfer Game', description: 'Set out cups, spoons, and a small bowl and let your child practice moving dry, safe items from one container to another.', time: '15–20 min', category: 'Everyday', emoji: '🥣', ages: ['toddler', 'preschool'], needs: ['calm', 'play', 'get-things-done'], effort: 'Low', setup: '2 min', mess: 'Low' },
-  { title: 'Stickers + Paper', description: 'Put out a few stickers and paper and let your child make a simple picture or scene.', time: '10–20 min', category: 'Creative', emoji: '⭐', ages: ['toddler', 'preschool', 'bigkid'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
+  { title: 'Backyard Nature Basket', description: 'Collect safe natural items such as leaves, pinecones, and sticks, then sort or talk about what you found.', time: '15–25 min', category: 'Outside', emoji: '🌿', ages: ['toddler', 'preschool'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'Low' },
+  { title: 'Bubble Chase', description: 'Blow bubbles and let your child chase, pop, count, or try to catch them.', time: '15–20 min', category: 'Outside', emoji: '🫧', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'Low' },
+  { title: 'Kitchen Transfer Game', description: "Offer large, age-safe play objects that cannot fit in the mouth, plus containers. Stay nearby as your child transfers them; avoid dry beans, rice, or other small loose pieces.", time: '15–20 min', category: 'Everyday', emoji: '🥣', ages: ['toddler', 'preschool'], needs: ['calm', 'play', 'get-things-done'], effort: 'Low', setup: '2 min', mess: 'Low' },
+  { title: 'Stickers + Paper', description: 'Put out a few stickers and paper and let your child make a simple picture or scene.', time: '10–20 min', category: 'Creative', emoji: '⭐', ages: ['toddler', 'preschool'], needs: ['calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
   { title: 'Toy Wash', description: 'Give your child a small tub or basin with water and a cloth to "wash" washable toys while you work nearby.', time: '15–20 min', category: 'Everyday', emoji: '🧽', ages: ['toddler', 'preschool'], needs: ['get-things-done', 'play'], effort: 'Low', setup: '2 min', mess: 'Some' },
   { title: 'Independent Play Bin', description: 'Put out three familiar items in a small bin and let your child explore while you finish one short task nearby.', time: '10–20 min', category: 'Independent', emoji: '🧸', ages: ['toddler', 'preschool'], needs: ['get-things-done', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
-  { title: 'Driveway Scavenger Hunt', description: 'Look for simple things such as a bird, a red car, a flower, a rock, or a cloud.', time: '10–20 min', category: 'Outside', emoji: '🔎', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Driveway Scavenger Hunt', description: 'Look for simple things such as a bird, a red car, a flower, a rock, or a cloud.', time: '10–20 min', category: 'Outside', emoji: '🔎', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Quiet Audiobook + Coloring', description: 'Put on a short child-friendly audiobook or story and offer crayons and paper for a calmer activity.', time: '15–30 min', category: 'Calm', emoji: '🎧', ages: ['preschool', 'bigkid'], needs: ['calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
 
   // ─── Outdoor: Free play & unstructured time ───
   { title: 'Just Go Outside', description: 'No plan, no toys, no agenda. Step into the yard, balcony, or park and let your child decide what to do. You can sit nearby and watch.', time: '20–60 min', category: 'Outside', emoji: '🌤️', ages: ['toddler', 'preschool', 'bigkid', 'tween'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Blanket on the Grass', description: 'Bring a blanket outside and let your baby lie down, look at the sky, feel the breeze, and listen to outdoor sounds. Sit beside them.', time: '15–30 min', category: 'Outside', emoji: '🧺', ages: ['baby'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'None' },
-  { title: 'Free Yard Time', description: 'Open the door and let your child run, dig, roll, climb, or just sit in the grass. No structure needed — unstructured outdoor time is the goal.', time: '30–60 min', category: 'Outside', emoji: '🌳', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
+  { title: 'Blanket on the Grass', description: "Sit beside your awake baby on a clean mat in a shaded, safe outdoor spot. Talk about the sounds and breeze; keep it brief and follow their comfort.", time: "2–5 min", category: 'Outside', emoji: '🧺', ages: ['baby'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'None' },
+  { title: 'Free Yard Time', description: "Agree on a safe play area. Supervise younger children closely while they explore; older children can choose a game, building project, or quiet break.", time: '30–60 min', category: 'Outside', emoji: '🌳', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
   { title: 'Follow the Child Walk', description: 'Head outside and let your child choose which way to go and when to stop. Follow their lead — they may want to watch ants for ten minutes and that is the whole point.', time: '20–45 min', category: 'Outside', emoji: '🚶', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Cloud Watching', description: 'Lie on the grass or a blanket and look at the clouds together. Talk about shapes, animals, or stories you see. No equipment needed.', time: '10–20 min', category: 'Outside', emoji: '☁️', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Outdoor Free Choice', description: 'Tell your child they have 30 minutes outside to do whatever they want — climb, run, sit, dig, explore. No instructions from you unless safety requires it.', time: '30 min', category: 'Outside', emoji: '🛟', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Outdoor Free Choice', description: "Agree on a safe area and check-in before outdoor time. Stay close to younger children; older children can choose a project, sport, or quiet break within those boundaries.", time: '30 min', category: 'Outside', emoji: '🛟', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
 
   // ─── Outdoor: Nature exploration ───
   { title: 'Bug Hunt', description: 'Look under rocks, leaves, and logs for ants, beetles, worms, and other tiny creatures. Watch gently and put things back when done.', time: '15–30 min', category: 'Outside', emoji: '🐜', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
-  { title: 'Nature Collection Walk', description: 'Bring a small bag or basket and collect leaves, pinecones, acorns, pebbles, or flowers. Sort them at home by color, size, or type.', time: '20–40 min', category: 'Outside', emoji: '🍂', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'Low' },
-  { title: 'Bird Watching', description: 'Sit quietly outside or near a window and look for birds. Count how many you see, notice their colors and sounds. No binoculars needed.', time: '10–20 min', category: 'Outside', emoji: '🐦', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Puddle Jumping', description: 'After rain, put on boots and go jump in puddles. Let your child get wet and messy — it is just water and clothes wash.', time: '15–30 min', category: 'Outside', emoji: '💧', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Some' },
+  { title: 'Nature Collection Walk', description: 'Bring a small bag or basket and collect leaves, pinecones, acorns, pebbles, or flowers. Sort them at home by color, size, or type.', time: '20–40 min', category: 'Outside', emoji: '🍂', ages: ['toddler', 'preschool'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'Low' },
+  { title: 'Bird Watching', description: "Watch without disturbing birds. Younger children can notice colors; school-age children can tally species, and tweens can compare sightings and investigate a question in a field guide.", time: '10–20 min', category: 'Outside', emoji: '🐦', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Puddle Jumping', description: 'After rain, put on boots and go jump in puddles. Let your child get wet and messy — it is just water and clothes wash.', time: '15–30 min', category: 'Outside', emoji: '💧', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Some' },
   { title: 'Tree Bark Rubbings', description: 'Hold paper against a tree trunk and rub with a crayon to reveal the bark pattern. Try different trees and compare textures.', time: '15–25 min', category: 'Outside', emoji: '🌳', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Low', setup: '2 min', mess: 'Low' },
   { title: 'Flower and Weed Discovery', description: 'Walk around your yard or block and look at flowers, weeds, and plants. Touch gently, smell, and talk about what is growing.', time: '15–30 min', category: 'Outside', emoji: '🌸', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Nature Scavenger Hunt', description: 'Make a quick mental list: find something smooth, something rough, something green, something brown, something that moves. Hunt together or let your child go solo.', time: '15–30 min', category: 'Outside', emoji: '🔎', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Nature Scavenger Hunt', description: "Younger children can find a few colors or textures with you. School-age children can write clue cards; tweens can design a mapped hunt with evidence for each find. Agree on safe boundaries.", time: '15–30 min', category: 'Outside', emoji: '🔎', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Watch the Sunset', description: 'Find a spot with a view of the western sky and watch the colors change as the sun goes down. Talk about what you see or just sit quietly together.', time: '15–25 min', category: 'Outside', emoji: '🌅', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Star Gazing', description: 'On a clear evening, step outside and look up at the stars. Try to find bright ones, notice patterns, or just enjoy the quiet.', time: '10–20 min', category: 'Outside', emoji: '⭐', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Listen to Nature Sounds', description: 'Sit outside, close your eyes, and listen. How many different sounds can you hear — birds, wind, cars, insects? Compare what you each noticed.', time: '5–15 min', category: 'Outside', emoji: '👂', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
 
   // ─── Outdoor: Movement & active play ───
   { title: 'Run and Chase', description: 'Just run. Tag, chase, race to the tree and back. No equipment, no setup — just let your child move their body hard.', time: '10–20 min', category: 'Outside', emoji: '🏃', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Jump the Line', description: 'Draw a line with chalk or use a crack in the driveway. Jump over it, jump along it, hop on one foot, see how far you can jump.', time: '10–20 min', category: 'Outside', emoji: '🦘', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Balance Beam Walk', description: 'Find a curb, low wall, fallen log, or drawn chalk line. Walk across it like a balance beam. Hold hands if needed.', time: '10–15 min', category: 'Outside', emoji: '🤸', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Jump the Line', description: 'Draw a line with chalk or use a crack in the driveway. Jump over it, jump along it, hop on one foot, see how far you can jump.', time: '10–20 min', category: 'Outside', emoji: '🦘', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Balance Beam Walk', description: 'Find a curb, low wall, fallen log, or drawn chalk line. Walk across it like a balance beam. Hold hands if needed.', time: '10–15 min', category: 'Outside', emoji: '🤸', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Simon Says (Outdoor Edition)', description: 'Play Simon Says with big movements — jump, spin, touch the ground, reach for the sky, run to the tree and back.', time: '10–15 min', category: 'Outside', emoji: '🎯', ages: ['preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Red Light Green Light', description: 'One person is the traffic light. Green means run, red means freeze. Simple, active, and needs no equipment.', time: '10–15 min', category: 'Outside', emoji: '🚦', ages: ['preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Hopscotch', description: 'Draw a hopscotch grid with chalk and hop through it. Great for balance and counting.', time: '15–25 min', category: 'Outside', emoji: '🔢', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Low', setup: '2 min', mess: 'Low' },
   { title: 'Ball Kicking', description: 'Bring a ball outside and kick it around the yard or park. No goal, no rules — just kicking, running, and chasing.', time: '15–30 min', category: 'Outside', emoji: '⚽', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Jump Rope or Hokey Pokey', description: 'If you have a jump rope, try it. If not, do the Hokey Pokey or any silly movement song outside in the fresh air.', time: '10–20 min', category: 'Outside', emoji: '🪢', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'None' },
+  { title: 'Jump Rope or Hokey Pokey', description: 'If you have a jump rope, try it. If not, do the Hokey Pokey or any silly movement song outside in the fresh air.', time: '10–20 min', category: 'Outside', emoji: '🪢', ages: ['preschool'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'None' },
   { title: 'Climb and Explore', description: 'Find a safe climbing structure — playground equipment, a low tree branch, or a boulder — and let your child climb, hang, and test their body.', time: '20–30 min', category: 'Outside', emoji: '🧗', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'Low' },
 
   // ─── Outdoor: Backyard activities ───
-  { title: 'Mud Kitchen', description: 'Give your child a few old containers, spoons, and water. Let them make mud pies, mud soup, and mud cakes. It washes off.', time: '20–40 min', category: 'Outside', emoji: '🥘', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: '2 min', mess: 'Some' },
-  { title: 'Dig in the Dirt', description: 'Give your child a small shovel or spoon and a patch of dirt. Let them dig, scoop, and build. No plan needed.', time: '20–40 min', category: 'Outside', emoji: '🕳️', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Some' },
+  { title: 'Mud Kitchen', description: 'Give your child a few old containers, spoons, and water. Let them make mud pies, mud soup, and mud cakes. It washes off.', time: '20–40 min', category: 'Outside', emoji: '🥘', ages: ['toddler', 'preschool'], needs: ['outside', 'play'], effort: 'Very low', setup: '2 min', mess: 'Some' },
+  { title: 'Dig in the Dirt', description: 'Give your child a small shovel or spoon and a patch of dirt. Let them dig, scoop, and build. No plan needed.', time: '20–40 min', category: 'Outside', emoji: '🕳️', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Some' },
   { title: 'Backyard Fort', description: 'Use blankets, chairs, sticks, or whatever is around to build a simple outdoor fort or hideout. Let your child lead the design.', time: '20–40 min', category: 'Outside', emoji: '⛺', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Medium', setup: '5 min+', mess: 'Low' },
-  { title: 'Paint with Water', description: 'Give your child a cup of water and a paintbrush. Let them paint the sidewalk, fence, or wall. It dries clear and there is zero cleanup.', time: '15–30 min', category: 'Outside', emoji: '🖌️', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'None' },
+  { title: 'Paint with Water', description: 'Give your child a cup of water and a paintbrush. Let them paint the sidewalk, fence, or wall. It dries clear and there is zero cleanup.', time: '15–30 min', category: 'Outside', emoji: '🖌️', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'None' },
   { title: 'Shadow Tracing', description: 'On a sunny day, stand in the sun and trace each other\'s shadows with chalk. Come back later to see how they moved.', time: '15–25 min', category: 'Outside', emoji: '👤', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Low', setup: '2 min', mess: 'Low' },
   { title: 'Backyard Camping', description: 'Set up a tent in the yard or just bring sleeping bags outside for a nap or story time under the sky. Even 30 minutes feels like an adventure.', time: '30–60 min', category: 'Outside', emoji: '🏕️', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'play'], effort: 'Medium', setup: '5 min+', mess: 'Low' },
   { title: 'Sticky Nature Walk', description: 'Wrap a strip of tape around your child\'s wrist sticky-side out. Collect leaves, petals, and seeds as you walk and stick them on.', time: '15–30 min', category: 'Outside', emoji: '🌿', ages: ['toddler', 'preschool'], needs: ['outside', 'play'], effort: 'Low', setup: '2 min', mess: 'Low' },
@@ -445,32 +447,32 @@ const activities: Activity[] = [
   { title: 'Water Balloon Toss', description: 'Fill a few water balloons and toss them back and forth. Move further apart each round. Simple, wet, and fun on a hot day.', time: '15–25 min', category: 'Outside', emoji: '🎈', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: '5 min+', mess: 'Some' },
 
   // ─── Outdoor: Gardening ───
-  { title: 'Water the Plants', description: 'Give your child a watering can or cup and let them water plants, flowers, or a garden bed. Simple, helpful, and gets them outside.', time: '10–15 min', category: 'Outside', emoji: '🚿', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'get-things-done'], effort: 'Very low', setup: 'None', mess: 'Low' },
-  { title: 'Plant Seeds', description: 'Give your child a few seeds and a small pot or patch of dirt. Let them dig, plant, and water. Check back over the coming days.', time: '15–25 min', category: 'Outside', emoji: '🌱', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: '5 min+', mess: 'Some' },
+  { title: 'Water the Plants', description: "Younger children can help pour with you. School-age children can check which plants need water, measure a suitable amount with you, and take responsibility for one plant.", time: '10–15 min', category: 'Outside', emoji: '🚿', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'get-things-done'], effort: 'Very low', setup: 'None', mess: 'Low' },
+  { title: 'Plant Seeds', description: "Plant with younger children and notice changes. School-age children can record growth; tweens can compare one growing condition and keep their own observations.", time: '15–25 min', category: 'Outside', emoji: '🌱', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: '5 min+', mess: 'Some' },
   { title: 'Pull Weeds Together', description: 'Show your child which plants are weeds and pull them together. It is real work, gets hands dirty, and helps the garden.', time: '15–25 min', category: 'Outside', emoji: '🧤', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'get-things-done'], effort: 'Low', setup: 'None', mess: 'Some' },
   { title: 'Harvest from the Garden', description: 'If you have vegetables, herbs, or fruit growing, let your child pick them. Talk about how they grew and what they taste like.', time: '10–20 min', category: 'Outside', emoji: '🥕', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'get-things-done'], effort: 'Very low', setup: 'None', mess: 'Low' },
   { title: 'Make a Mini Garden', description: 'Use a container, old pot, or patch of soil. Let your child fill it with dirt, plant seeds or small plants, and water them. They can check on it daily.', time: '20–30 min', category: 'Outside', emoji: '🪴', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Medium', setup: '5 min+', mess: 'Some' },
 
   // ─── Outdoor: Sensory activities ───
   { title: 'Sensory Walk Barefoot', description: 'On a warm day, walk barefoot on grass, sand, smooth stones, or dirt. Talk about how each surface feels on your feet.', time: '10–15 min', category: 'Outside', emoji: '🦶', ages: ['toddler', 'preschool'], needs: ['outside', 'calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
-  { title: 'Sand or Dirt Sensory Bin', description: 'Fill a shallow container with sand, rice, or dirt. Add scoops, cups, or toy animals. Let your child dig, pour, and feel.', time: '20–30 min', category: 'Outside', emoji: '🏖️', ages: ['baby', 'toddler', 'preschool'], needs: ['outside', 'calm', 'play'], effort: 'Low', setup: '5 min+', mess: 'Some' },
+  { title: 'Sand or Dirt Sensory Bin', description: "For children who no longer mouth objects, use clean play sand and large age-rated scoops with direct supervision. Skip rice and small loose pieces; choose a different activity if materials go toward the mouth.", time: '20–30 min', category: 'Outside', emoji: '🏖️', ages: ['preschool'], needs: ['outside', 'calm', 'play'], effort: 'Low', setup: '5 min+', mess: 'Some' },
   { title: 'Smell the Garden', description: 'Walk around the yard or park and smell flowers, herbs, grass, and leaves. Talk about which smells you like and which you do not.', time: '10–15 min', category: 'Outside', emoji: '👃', ages: ['toddler', 'preschool'], needs: ['outside', 'calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Texture Hunt', description: 'Find things outside that are smooth, rough, bumpy, soft, hard, and fuzzy. Touch each one and describe how it feels.', time: '10–20 min', category: 'Outside', emoji: '✋', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Texture Hunt', description: 'Find things outside that are smooth, rough, bumpy, soft, hard, and fuzzy. Touch each one and describe how it feels.', time: '10–20 min', category: 'Outside', emoji: '✋', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Wind and Weather Feel', description: 'Step outside and notice the wind on your face, the sun on your arms, the temperature. Talk about what your body feels. Great for babies too.', time: '5–10 min', category: 'Outside', emoji: '🌬️', ages: ['baby', 'toddler', 'preschool'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
 
   // ─── Outdoor: Simple games ───
   { title: 'Hide and Seek', description: 'Classic outdoor hide and seek. No equipment, just a yard or park and a few hiding spots.', time: '15–25 min', category: 'Outside', emoji: '🙈', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Duck Duck Goose', description: 'Sit in a circle outside and play Duck Duck Goose. Great for groups or even two people with a modified version.', time: '10–20 min', category: 'Outside', emoji: '🦆', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Duck Duck Goose', description: 'Sit in a circle outside and play Duck Duck Goose. Great for groups or even two people with a modified version.', time: '10–20 min', category: 'Outside', emoji: '🦆', ages: ['preschool'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'What Time Is It Mr. Wolf?', description: 'One person is the wolf, standing with their back turned. The others ask "What time is it Mr. Wolf?" and creep forward until the wolf turns around and chases.', time: '10–20 min', category: 'Outside', emoji: '🐺', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Color Tag', description: 'Pick a color. The person who is "it" chases. You are safe if you are touching something that color. Run between safe spots.', time: '10–15 min', category: 'Outside', emoji: '🎨', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Obstacle Race', description: 'Set up a simple course: run to the tree, jump three times, touch the fence, hop back. Time it or just do it for fun.', time: '15–25 min', category: 'Outside', emoji: '🏁', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: '2 min', mess: 'None' },
+  { title: 'Obstacle Race', description: "Younger children can follow a short safe course. School-age children can design and time one; tweens can adjust distances or rules and compare their own results.", time: '15–25 min', category: 'Outside', emoji: '🏁', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: '2 min', mess: 'None' },
   { title: 'Freeze Dance (Outdoor)', description: 'Play music from your phone and dance outside. Freeze when the music stops. Simple, active, and gets everyone moving in fresh air.', time: '10–15 min', category: 'Outside', emoji: '💃', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
 
   // ─── Outdoor: Walks & neighborhood exploration ───
   { title: 'Neighborhood Walk', description: 'Just walk. No destination, no agenda. Let your child set the pace and stop when they want to look at something.', time: '20–45 min', category: 'Outside', emoji: '🚶', ages: ['toddler', 'preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Color Walk', description: 'Pick a color before you leave. Count how many things you see in that color on your walk. Switch colors next time.', time: '15–30 min', category: 'Outside', emoji: '🌈', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Number Hunt Walk', description: 'Look for numbers on your walk — house numbers, car license plates, signs. Count them, find specific numbers, or see who spots the highest.', time: '15–25 min', category: 'Outside', emoji: '🔢', ages: ['preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Letter Walk', description: 'Look for letters on signs, mailboxes, and buildings. Find the letters of your child\'s name or go through the alphabet.', time: '15–25 min', category: 'Outside', emoji: '🔤', ages: ['preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Color Walk', description: 'Pick a color before you leave. Count how many things you see in that color on your walk. Switch colors next time.', time: '15–30 min', category: 'Outside', emoji: '🌈', ages: ['toddler', 'preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Number Hunt Walk', description: "Preschoolers can spot familiar numbers with you. School-age children can compare house numbers, find odd and even patterns, or estimate the difference between two numbers.", time: '15–25 min', category: 'Outside', emoji: '🔢', ages: ['preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Letter Walk', description: 'Look for letters on signs, mailboxes, and buildings. Find the letters of your child\'s name or go through the alphabet.', time: '15–25 min', category: 'Outside', emoji: '🔤', ages: ['preschool'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Sensory Walk', description: 'Walk and notice one thing for each sense: something you see, hear, smell, and feel. Talk about what you each noticed at the end.', time: '15–30 min', category: 'Outside', emoji: '🌿', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Explore a New Street', description: 'Take a different route than usual. See what is different — new houses, trees, dogs, or shops. Let your child choose which way at each corner.', time: '20–40 min', category: 'Outside', emoji: '🧭', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Walk and Talk', description: 'Walk together with no toys, no phone, no agenda. Let your child talk about whatever is on their mind. The walk is the activity.', time: '20–40 min', category: 'Outside', emoji: '💬', ages: ['bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
@@ -479,16 +481,16 @@ const activities: Activity[] = [
   { title: 'Playground Visit', description: 'Go to a nearby playground. Let your child choose what to play on — swings, slides, climbing structures. Follow their lead and resist the urge to direct.', time: '30–60 min', category: 'Outside', emoji: '🛝', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'Low' },
   { title: 'Climbing Structure Challenge', description: 'At the playground, challenge your child to climb to the top, hang from the bars, or try a new part of the structure they usually avoid.', time: '20–30 min', category: 'Outside', emoji: '🧗', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'play'], effort: 'Low', setup: 'None', mess: 'Low' },
   { title: 'Slide Races', description: 'Take turns going down the slide and racing back to the stairs. Simple, repetitive, and burns energy.', time: '15–25 min', category: 'Outside', emoji: '🛼', ages: ['toddler', 'preschool'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Swing and Chat', description: 'Push your child on the swing and just talk. The rhythm of swinging often opens up conversation in a way sitting face-to-face does not.', time: '15–25 min', category: 'Outside', emoji: '🎠', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Playground Scavenger Hunt', description: 'Find things at the playground: something red, something to climb, something that spins, something to balance on. Explore the whole space.', time: '15–25 min', category: 'Outside', emoji: '🎯', ages: ['preschool', 'bigkid'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Swing and Chat', description: "Chat at the swings or while resting nearby. Offer younger children a push if needed; let older children choose the pace and conversation.", time: '15–25 min', category: 'Outside', emoji: '🎠', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Playground Scavenger Hunt', description: 'Find things at the playground: something red, something to climb, something that spins, something to balance on. Explore the whole space.', time: '15–25 min', category: 'Outside', emoji: '🎯', ages: ['preschool'], needs: ['outside', 'play'], effort: 'Very low', setup: 'None', mess: 'None' },
 
   // ─── Outdoor: Quiet activities (reading, drawing, observing) ───
-  { title: 'Read Outside', description: 'Bring a few books to the yard, porch, or park. Read together or let your child look at books on a blanket while you sit nearby.', time: '15–30 min', category: 'Outside', emoji: '📖', ages: ['baby', 'toddler', 'preschool', 'bigkid'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Read Outside', description: "Choose a book and a comfortable outdoor spot. Read aloud to younger children; older readers can choose their own book and share a favorite passage.", time: '15–30 min', category: 'Outside', emoji: '📖', ages: ['baby', 'toddler', 'preschool', 'bigkid'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Outdoor Drawing', description: 'Bring paper and crayons outside. Draw what you see — a tree, a flower, the sky, a bug. Or just doodle in the fresh air.', time: '15–25 min', category: 'Outside', emoji: '🎨', ages: ['preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'play'], effort: 'Very low', setup: '2 min', mess: 'Low' },
   { title: 'Nature Journal', description: 'Bring a notebook outside. Draw or write about what you observe — a bird, a leaf, the weather. No pressure to be artistic, just notice and record.', time: '15–30 min', category: 'Outside', emoji: '📓', ages: ['bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Quiet Sitting Outside', description: 'Bring a blanket or chair and just sit outside together. No activity, no talking required. Watch, listen, and be still. Good for you too.', time: '10–20 min', category: 'Outside', emoji: '🧘', ages: ['baby', 'toddler', 'preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
+  { title: 'Quiet Sitting Outside', description: "Share a brief outdoor pause in a safe, comfortable spot. Support babies securely; younger children can move and notice things rather than needing to sit still.", time: '10–20 min', category: 'Outside', emoji: '🧘', ages: ['baby', 'toddler', 'preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
   { title: 'Cloud Stories', description: 'Look at the clouds and take turns making up stories about the shapes you see. A dragon, a whale, a castle — whatever the clouds suggest.', time: '10–20 min', category: 'Outside', emoji: '☁️', ages: ['preschool', 'bigkid'], needs: ['outside', 'calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
-  { title: 'Outdoor Snack Picnic', description: 'Take a snack outside on a blanket. Eat together on the grass, porch, or balcony. The change of scenery makes it feel special with zero extra effort.', time: '15–25 min', category: 'Outside', emoji: '🧺', ages: ['baby', 'toddler', 'preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'Low' },
+  { title: 'Outdoor Snack Picnic', description: "Take a usual snack to a safe outdoor spot. Seat children securely and supervise eating; for babies, follow their established feeding stage and routine. Older children can plan and pack the snack.", time: '15–25 min', category: 'Outside', emoji: '🧺', ages: ['baby', 'toddler', 'preschool', 'bigkid', 'tween'], needs: ['outside', 'calm', 'lowest-effort'], effort: 'Very low', setup: '2 min', mess: 'Low' },
   { title: 'Watch the Ants', description: 'Find an ant trail or a busy spot in the dirt. Sit and watch. Where are they going? What are they carrying? Quiet observation is a real activity.', time: '10–15 min', category: 'Outside', emoji: '🐜', ages: ['toddler', 'preschool', 'bigkid'], needs: ['outside', 'calm', 'play', 'lowest-effort'], effort: 'Very low', setup: 'None', mess: 'None' },
 ];
 
@@ -2108,12 +2110,14 @@ const applyAboutChild = (guidance: Guidance, about: AboutChild | undefined): Gui
 };
 
 const getChildGuidanceAge = (age: string): AgeId => {
-  if (age === 'Newborn' || age === '0–12 months') return 'baby';
-  if (age === '1 year' || age === '2 years') return 'toddler';
-  if (age === '3 years' || age === '4 years' || age === '5 years') return 'preschool';
-  if (age === '6–8 years') return 'bigkid';
-  if (age === '9–12 years' || age === '13+ years') return 'tween'; // 13+ is retained only for legacy profiles; new profiles stop at 9–12.
-  return 'bigkid';
+  if (/newborn|month/i.test(age)) return 'baby';
+  const years = Number.parseInt(age, 10);
+  if (!Number.isFinite(years)) return 'bigkid';
+  if (years < 1) return 'baby';
+  if (years < 3) return 'toddler';
+  if (years < 6) return 'preschool';
+  if (years < 9) return 'bigkid';
+  return 'tween'; // Retain older legacy profiles without changing stored data.
 };
 
 const A_GOOD_WAY_ICON_DATA_URL = 'data:image/webp;base64,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';
@@ -2235,6 +2239,11 @@ function App() {
     activities.find((item) => item.ages.includes('preschool'))!
   );
   const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    setActivity(current => current.ages.includes(selectedAge) ? current : activities.find(item => item.ages.includes(selectedAge))!);
+    setShowMoreDevelopment(false);
+    setShowFullDayPlan(false);
+  }, [selectedAge]);
   const [selectedNeed, setSelectedNeed] = useState<QuickNeed | null>(null);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const [activitySelectionMessage, setActivitySelectionMessage] = useState('');
@@ -2252,6 +2261,8 @@ function App() {
   const developmentRef = useRef<HTMLElement | null>(null);
   const toolsRef = useRef<HTMLElement | null>(null);
   const situationGridRef = useRef<HTMLDivElement | null>(null);
+  const [showMoreDevelopment, setShowMoreDevelopment] = useState(false);
+  const [showFullDayPlan, setShowFullDayPlan] = useState(false);
   const [activeNav, setActiveNav] = useState<'home' | 'help' | 'explore' | 'saved'>('home');
   const [justTellMeText, setJustTellMeText] = useState('');
   const [justTellMeResult, setJustTellMeResult] = useState<Guidance | null>(null);
@@ -4188,6 +4199,8 @@ default:
       window.requestAnimationFrame(() => {
         const target = document.querySelector('.day-plan-section') as HTMLElement | null;
         if (target) {
+          const disclosure = target.querySelector("details");
+          if (disclosure) disclosure.open = true;
           const navOffset = window.innerWidth >= 701 ? 88 : 12;
           const top = target.getBoundingClientRect().top + window.scrollY - navOffset;
           window.scrollTo({ top: Math.max(0, top), left: 0, behavior: 'auto' });
@@ -6001,9 +6014,9 @@ const getDayLabel = (offset: number): string => {
   const developmentActivitiesByAge: Record<string, Omit<DevelopmentActivity, 'id' | 'completed'>[]> = {
     baby: [
       { title: 'Talk and respond', area: '💬 Communication', description: 'Talk, sing, and respond to your baby\'s sounds and expressions.' },
-      { title: 'Tummy-time play', area: '🏃 Physical', description: 'Offer supervised floor time with a favorite toy just within reach.' },
+      { title: 'Tummy-time play', area: '🏃 Physical', description: 'Stay beside your awake baby for a brief floor session. Looking at your face counts; reaching is optional. Stop at tired cues.' },
       { title: 'Copy my face', area: '💛 Social & Emotional', description: 'Make simple facial expressions and pause so your baby can watch and respond.' },
-      { title: 'Find the toy', area: '🧩 Thinking', description: 'Partly hide a favorite toy and let your baby look for it.' },
+      { title: 'Find the toy', area: '🧩 Thinking', description: 'For a baby already reaching, partly hide a baby-safe toy behind your hand. For younger babies, move it slowly within view and let them watch.' },
     ],
     toddler: [
       { title: 'Name and find', area: '💬 Communication', description: 'Name familiar objects and ask your child to find or point to them.' },
@@ -6036,7 +6049,7 @@ const getDayLabel = (offset: number): string => {
     : null;
 
   const developmentSuggestions = developmentAge
-    ? developmentActivitiesByAge[developmentAge]
+    ? [academicPreviews(developmentAge)[0], ...developmentActivitiesByAge[developmentAge], ...academicPreviews(developmentAge).slice(1)]
     : [];
 
   const toggleDevelopmentActivity = (childId: number, activity: Omit<DevelopmentActivity, 'id' | 'completed'>) => {
@@ -10381,7 +10394,7 @@ const getDayLabel = (offset: number): string => {
               <div className="taking-over-section">
                 <label>Who am I caring for?</label>
                 <div className="taking-over-choices">
-                  {([['baby','Baby'],['toddler','Toddler'],['preschool','Preschooler'],['bigkid','School Age'],['tween','Tween (9–12)'],['multiple','Multiple kids']] as const).map(([val, label]) => (
+                  {([['baby','Baby'],['toddler','Toddler'],['preschool','Preschooler'],['bigkid','School Age'],['tween','Tween (9–11)'],['multiple','Multiple kids']] as const).map(([val, label]) => (
                     <button key={val} type="button"
                       className={`taking-over-choice ${takingOverAge === val ? 'selected' : ''}`}
                       onClick={() => { setTakingOverAge(val); setTakingOverPlan(null); }}
@@ -10491,7 +10504,7 @@ const getDayLabel = (offset: number): string => {
               : 'Whether you\'re a parent, nanny, grandparent, or caregiver — choose what is happening right now and we\'ll help you find a practical next step.'}
           </p>
 
-          <div className="personalize-top-card" aria-label="Choose who you need help for">
+          <details className="personalize-top-card compact-profile" open={selectedHelpChild ? undefined : true} key={selectedHelpChild?.id ?? "general"}><summary>{selectedHelpChild ? <><strong>👧 {selectedHelpChild.name}</strong><span>{selectedHelpChild.age}</span><small>Change / Edit</small></> : <strong>Choose who you need help for</strong>}</summary><div className="profile-options-body">
             <div className="personalize-top-heading">
               <div>
                 <p className="mood-check-in-label">Who are you getting help for?</p>
@@ -10541,7 +10554,7 @@ const getDayLabel = (offset: number): string => {
                     <option value="toddler">🧸 Toddler · 1–2 years</option>
                     <option value="preschool">🦋 Preschooler · 3–5 years</option>
                     <option value="bigkid">🎒 School Age · 6–8 years</option>
-                    <option value="tween">🧩 Tween · 9–12 years</option>
+                    <option value="tween">🧩 Tween · 9–11 years</option>
                   </select>
                 </label>
                 <button type="button" className="personalize-add-child" onClick={openChildForm}>
@@ -10549,7 +10562,7 @@ const getDayLabel = (offset: number): string => {
                 </button>
               </>
             )}
-          </div>
+          </div></details>
 
           <div className="mood-check-in">
             <p className="mood-check-in-label">How's today going?</p>
@@ -11010,7 +11023,7 @@ const getDayLabel = (offset: number): string => {
               <span className="development-kicker">Grow together</span>
               <h2>🧠 Growing and Learning</h2>
               <p>
-                Age-appropriate ideas for communication, movement, social-emotional skills, and thinking.
+                Try one idea now, or explore more skills together.
               </p>
             </div>
           </div>
@@ -11027,7 +11040,7 @@ const getDayLabel = (offset: number): string => {
               </div>
 
               <div className="development-grid">
-                {developmentSuggestions.map((activity) => {
+                {(showMoreDevelopment ? developmentSuggestions : developmentSuggestions.slice(0, 2)).map((activity) => {
                   const completed = (selectedHelpChild.development || []).some(
                     saved => saved.title === activity.title && saved.completed
                   );
@@ -11049,6 +11062,7 @@ const getDayLabel = (offset: number): string => {
                 })}
               </div>
 
+              {developmentSuggestions.length > 2 && <button type="button" className="disclosure-button" aria-expanded={showMoreDevelopment} onClick={() => setShowMoreDevelopment(!showMoreDevelopment)}>{showMoreDevelopment ? "Show less" : "See more ideas"}</button>}
               {(selectedHelpChild.development || []).length > 0 && (
                 <div className="development-progress">
                   <strong>💛 {selectedHelpChild.name}'s activities</strong>
@@ -11098,6 +11112,7 @@ const getDayLabel = (offset: number): string => {
                   <button type="button" onClick={() => setSelectedChildId(null)}>Close</button>
                 </div>
 
+                <details className="plan-context"><summary>Edit profile, notes & saved tools</summary>
                 {(() => {
                   const temperamentLocked = isFeatureLocked('temperament-personalization');
                   return (
@@ -11315,6 +11330,7 @@ const getDayLabel = (offset: number): string => {
                 </div>
 
                 </div>
+                </details>
               </div>
             );
           })()}
@@ -11328,7 +11344,7 @@ const getDayLabel = (offset: number): string => {
                 <option value="">Choose age</option>
                 <option>Newborn</option><option>0–12 months</option><option>1 year</option><option>2 years</option>
                 <option>3 years</option><option>4 years</option><option>5 years</option><option>6–8 years</option>
-                <option>9–12 years</option>
+                <option>9–11 years</option>
               </select>
               <div><button type="button" className="save-note" onClick={addChild} disabled={!childName.trim() || !childAge}>Save child</button>
               <button type="button" onClick={() => setShowChildForm(false)}>Cancel</button></div>
@@ -12271,13 +12287,12 @@ const getDayLabel = (offset: number): string => {
         </section>
 
         <section data-analytics-view="day_planner" className="day-plan-section">
-          <div className="section-heading">
-            <p className="eyebrow">PLAN MY DAY {isPremium ? '' : '· PREMIUM'}</p>
+          <details className="secondary-disclosure"><summary className="section-heading">            <p className="eyebrow">PLAN MY DAY {isPremium ? '' : '· PREMIUM'}</p>
             <h2>☀️ Plan My Day</h2>
             <p style={{ maxWidth: 650, margin: '8px auto 0', color: '#68716a', lineHeight: 1.55 }}>
               Tell Breezier Days what your day already looks like, and it helps you figure out the rest. Pick a day — today or up to a week ahead — add what is happening, and get practical suggestions for before, during, after, and evening.
             </p>
-          </div>
+          </summary>
 
           {isFeatureLocked('personalized-daily-plan') ? (
             <div className="premium-locked-card">
@@ -12405,6 +12420,27 @@ const getDayLabel = (offset: number): string => {
 
               {dayEventPlan && (
                 <div ref={planMyDayRef} data-analytics-result="day_planner" data-analytics-reopened={openedSavedDayPlan ? "day_planner" : undefined} className="day-plan-result">
+                  <div className="day-plan-suggestions">
+                    {(showFullDayPlan ? dayEventPlan.suggestions : dayEventPlan.suggestions.slice(0, 2)).map((sug, i) => (
+                      <div key={i} className={`day-plan-suggestion-card day-plan-suggestion-${sug.phase}`}>
+                        <div className="day-plan-suggestion-header">
+                          <span className="day-plan-suggestion-emoji">{sug.emoji}</span>
+                          <h3>{sug.label}</h3>
+                        </div>
+                        {sug.timeRange && (
+                          <p className="day-plan-suggestion-time">{sug.timeRange}</p>
+                        )}
+                        <ul className="day-plan-suggestion-items">
+                          {sug.items.map((item, j) => (
+                            <li key={j}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+
+                  {dayEventPlan.suggestions.length > 2 && <button type="button" className="disclosure-button" aria-expanded={showFullDayPlan} onClick={() => setShowFullDayPlan(!showFullDayPlan)}>{showFullDayPlan ? "Show shorter plan" : "See the rest of the day"}</button>}
+                  <details className="plan-context"><summary>Plan context & tips</summary>
                   {dayEventPlan.weatherNote && <p className="day-plan-weather-note"><strong>Weather context</strong><br />{dayEventPlan.weatherNote}</p>}
                   <div className="day-plan-intro">
                     <span>💛</span>
@@ -12425,25 +12461,7 @@ const getDayLabel = (offset: number): string => {
                     </div>
                   )}
 
-                  <div className="day-plan-suggestions">
-                    {dayEventPlan.suggestions.map((sug, i) => (
-                      <div key={i} className={`day-plan-suggestion-card day-plan-suggestion-${sug.phase}`}>
-                        <div className="day-plan-suggestion-header">
-                          <span className="day-plan-suggestion-emoji">{sug.emoji}</span>
-                          <h3>{sug.label}</h3>
-                        </div>
-                        {sug.timeRange && (
-                          <p className="day-plan-suggestion-time">{sug.timeRange}</p>
-                        )}
-                        <ul className="day-plan-suggestion-items">
-                          {sug.items.map((item, j) => (
-                            <li key={j}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-
+</details>
                   <div style={{ marginTop: 14, padding: 14, borderRadius: 14, background: '#f7f3ec', border: '1px solid rgba(73,100,85,.12)' }}>
                     <strong style={{ display: 'block', marginBottom: 8 }}>What would help you most?</strong>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
@@ -12550,16 +12568,15 @@ const getDayLabel = (offset: number): string => {
               )}
             </>
           )}
-        </section>
+        </details></section>
 
         <section data-analytics-view="weather" className="weather-smart-section">
-          <div className="section-heading">
-            <p className="eyebrow">ACTIVITIES FOR THE WEATHER {isPremium ? '' : '· PREMIUM'}</p>
+          <details className="secondary-disclosure"><summary className="section-heading">            <p className="eyebrow">ACTIVITIES FOR THE WEATHER {isPremium ? '' : '· PREMIUM'}</p>
             <h2>☀️ Weather-Smart Activities</h2>
             <p style={{ maxWidth: 650, margin: '8px auto 0', color: '#68716a', lineHeight: 1.55 }}>
               Get activity ideas based on the real weather where you are — tailored to your child's age, your time, and their energy.
             </p>
-          </div>
+          </summary>
 
           {isFeatureLocked('weather-smart-activities') ? (
             <div className="premium-locked-card">
@@ -12655,7 +12672,7 @@ const getDayLabel = (offset: number): string => {
               )}
             </>
           )}
-        </section>
+        </details></section>
         </section>
 
         <section ref={savedIdeasRef} data-analytics-view="saved" className="saved-ideas-section">
@@ -12927,7 +12944,7 @@ const getDayLabel = (offset: number): string => {
                   <small>Just give me an idea</small>
                 </button>
 
-                <button type="button" aria-pressed={selectedNeed === 'get-things-done'} style={{ borderColor: selectedNeed === 'get-things-done' ? '#496455' : undefined, boxShadow: selectedNeed === 'get-things-done' ? '0 8px 20px rgba(73,100,85,.14)' : undefined }} onClick={() => chooseActivityForNeed('get-things-done')}>
+                <button type="button" className="get-things-done-choice" aria-pressed={selectedNeed === 'get-things-done'} style={{ borderColor: selectedNeed === 'get-things-done' ? '#496455' : undefined, boxShadow: selectedNeed === 'get-things-done' ? '0 8px 20px rgba(73,100,85,.14)' : undefined }} onClick={() => chooseActivityForNeed('get-things-done')}>
                   <span>🏠</span>
                   <strong>I need to get things done</strong>
                   <small>Keep them involved nearby</small>
