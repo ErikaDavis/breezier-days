@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { setAnalyticsContext, setAnalyticsTransport, observeAnalyticsSurfaces, type AccountState } from './analytics';
+import { analyticsTraffic, setAnalyticsContext, setAnalyticsTransport, observeAnalyticsSurfaces, type AccountState } from './analytics';
 
 const measurementId = (import.meta.env.VITE_GA_MEASUREMENT_ID || '').trim();
 const configured = /^G-[A-Z0-9]+$/.test(measurementId);
@@ -28,7 +28,7 @@ function trackPage(page: string) {
     });
     target.gtag('js', new Date());
     target.gtag('config', measurementId, {
-      send_page_view: false, allow_google_signals: false,
+      ...analyticsTraffic(), send_page_view: false, allow_google_signals: false,
       allow_ad_personalization_signals: false,
       page_location: window.location.origin + '/', page_referrer: '',
     });
@@ -43,7 +43,7 @@ function trackPage(page: string) {
   if (lastPage === page) return;
   lastPage = page;
   target.gtag!('event', 'page_view', {
-    send_to: measurementId,
+    ...analyticsTraffic(), send_to: measurementId,
     page_title: `Breezier Days — ${page}`,
     page_location: `${window.location.origin}/${page === 'home' ? '' : page}`,
     page_referrer: '',

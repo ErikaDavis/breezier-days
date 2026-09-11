@@ -76,3 +76,11 @@ test('sync remains local-first and never sends stored profiles to analytics', ()
   result.schedulePush();result=render();assert.equal(result.syncState,'synced');assert.equal(result.remoteData.children[0].name,'Private');
 });
 
+
+test('checkout created is separate from launch and failures never count as launch', async()=>{
+  for(const outcome of ['opened','blocked','creation_failed','throws']){
+    const sent=[];const c=vm.createContext({premiumModalFeature:'food-on-hand',setCheckoutLoading(){},setCheckoutError(){},setShowCheckoutConfirm(){},setTermsAccepted(){},track:(...e)=>sent.push(e),createCheckoutSession:async()=>{if(outcome==='throws')throw Error('secret');return outcome==='creation_failed'?{error:'private failure'}:{url:'https://checkout.stripe.com/test'}},window:{open:()=>outcome==='blocked'?null:{}}});await evaluate('confirmCheckout',c)();
+    assert.equal(sent.some(e=>e[0]==='premium_checkout_start'),outcome==='opened');assert.equal(sent.some(e=>e[0]==='premium_checkout_created'),['opened','blocked'].includes(outcome));assert.equal(sent.some(e=>e[2]?.code==='popup_blocked'),outcome==='blocked');assert.ok(!JSON.stringify(sent).includes('secret')&&!JSON.stringify(sent).includes('private failure'));
+  }
+});
+test('Growing and Learning emits mark state, never activity completion',()=>{assert.match(functionSource('toggleDevelopmentActivity'),/activity_mark/);assert.doesNotMatch(functionSource('toggleDevelopmentActivity'),/activity_try/)});

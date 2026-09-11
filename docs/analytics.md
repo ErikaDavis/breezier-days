@@ -1,43 +1,58 @@
-# Analytics measurement contract (v1)
+# Analytics measurement contract (v2)
 
-GA is loaded only after analytics consent. No pre-consent custom events are queued or replayed. Existing page-view and consent behavior is retained. All custom payloads pass through `src/analytics.ts`; arbitrary properties are discarded.
+Analytics loads only after consent. No pre-consent events are queued or replayed. Fixed-vocabulary payloads pass through src/analytics.ts; arbitrary properties are discarded. No pricing, access, layout, or recommendation changes.
 
-Common parameters: `feature` (fixed feature family), `entry_point` (home/help/explore/saved), `account_state` (unknown/signed_out/signed_in_free/premium), `measurement_version` (1). Unknown includes authenticated users awaiting an authoritative membership response. Existing sanitized page metadata is attached by the consent component.
+Common custom-event parameters: feature (fixed family), entry_point (home/help/explore/saved), account_state (unknown/signed_out/signed_in_free/premium), measurement_version (2), traffic_type (external/internal). Page metadata remains sanitized.
 
-| Event | Trigger | Additional parameters |
+| Event | Meaning | Important parameters |
 | --- | --- | --- |
-| feature_view | An explicitly annotated feature surface becomes visible, excluding obscured background content | none |
-| feature_start | A deliberate open, request, reuse, or try action | action: open/request/reuse/try |
-| result_view | A result surface actually becomes visible; loading and failed attempts are excluded | none |
-| activity_try | Growing & Learning marked/unmarked state successfully persists locally | state: marked/unmarked |
-| idea_save | A new idea, day plan, or learning plan successfully persists locally | item_type: activity/guidance/meal/learning/day_plan/learning_plan/home_reset |
-| saved_item_open | A reopened saved answer, meal, day plan, or learning plan becomes visible | none |
-| feature_error | A handled generation, persistence, sync, authentication, checkout, verification, weather, or runtime failure | code: fixed code below |
-| feature_blocked | An existing quota or Premium gate blocks an action | code: free_limit/premium_required |
-| sign_up | Supabase returns a newly created identity; duplicate/obfuscated responses excluded | method: password |
-| login | Explicit password sign-in succeeds; session restoration excluded | method: password |
-| premium_offer_view | An existing inline or modal Premium offer becomes visible | placement: inline/modal |
-| premium_checkout_start | Authenticated checkout session creation returns a checkout URL | none |
-| premium_conversion | Authenticated server verification confirms the returned session is complete, paid, positive-value, owned by this account, and contains the configured Premium price | none |
+| feature_view | Annotated surface becomes visible, excluding hidden/background/modal-obscured content | feature=today identifies daily section |
+| feature_open | Deliberately open a tool | action=open |
+| feature_start | Explicit request or activity checkbox action | action=request/try |
+| result_view | Result actually becomes visible, excluding loading/failed attempts | result_kind=automatic/requested/reused |
+| feature_reuse | Request an existing saved result | action=reuse |
+| today_interaction | Click an existing Today control | interaction=weather_controls/weather_source |
+| activity_mark | Growing & Learning checkbox change persists locally | state=marked/unmarked |
+| idea_save | New idea/plan persists locally | item_type=activity/guidance/meal/learning/day_plan/learning_plan/home_reset |
+| saved_item_open | Reopened saved guidance/meal/day plan/learning plan becomes visible | feature |
+| feature_error | Handled technical failure | code; offer_tool for checkout creation failures |
+| feature_blocked | Existing gate or blocked checkout popup | code; offer_tool for popup failure |
+| sign_up | New identity accepted; duplicate/obfuscated responses excluded | method=password |
+| login | Explicit password sign-in succeeds; session restoration excluded | method=password |
+| premium_offer_view | Inline/modal offer becomes visible | placement=inline/modal; offer_tool |
+| premium_checkout_created | Checkout API returns a URL | offer_tool |
+| premium_checkout_start | window.open returns a window for checkout | offer_tool |
+| premium_conversion | Server verifies a complete, paid, positive-value purchase owned by this account for the Premium price | account_state=premium |
 
-Error codes: generation_failed, no_result, storage_failed, sync_failed, auth_failed, checkout_failed, popup_blocked, verification_failed, weather_unavailable, runtime_error. Never raw exception messages.
+activity_try remains recognized for legacy compatibility but is no longer emitted by the checkbox UI. Its historical counts are not completed activities. Standard page_view continues separately.
 
-Feature families: home, help, explore, saved, growing_learning, practical_help, personalized_help, activities, learning, learning_plans, day_planner, home_reset, meals, weather, taking_over, handoff, premium, account, sync. Specific health/development topics are collapsed into broad families.
+Codes: generation_failed, no_result, storage_failed, sync_failed, auth_failed, checkout_failed, popup_blocked, verification_failed, weather_unavailable, runtime_error, free_limit, premium_required. Never raw error text.
+
+Feature families: home, help, explore, saved, growing_learning, practical_help, personalized_help, activities, learning, learning_plans, day_planner, home_reset, meals, weather, taking_over, handoff, premium, account, sync, today. Sensitive topics collapse into broad families.
+
+offer_tool: general, unlimited-help-now, deeper-behavior, personalized-daily-plan, time-based-recommendations, food-on-hand, picky-eating, preschool-lunch, multi-child, unlimited-saved, real-reminders, advanced-activities, weather-smart-activities, personalized-learning, learning-plans, home-reset-premium, temperament-personalization, taking_over. These identify product gates, never family content.
 
 ## Counting semantics
 
-- Feature impressions dedupe by feature and navigation area in tab session storage, with 30 minutes of inactivity expiry. Offers also distinguish placement. Refresh/rerender does not create another impression within that window.
-- Result/reopen impressions dedupe per explicit request/reuse/try attempt. Merely opening the same existing result does not create a fresh success. Default displayed results may count once without a preceding request. Compare request funnels separately from default discovery.
-- Explicit repeated actions are intentionally counted. New local saves exclude duplicates and hydration; these events prove local persistence, not cloud delivery. Marked activity means the user marked it, not independently verified real-world completion.
-- Signup means account creation accepted, not email confirmation. Login starts with unknown membership until the server answers.
-- Checkout start means a session was created, not proof the checkout page loaded. Popup failure is separate.
-- Conversion is consented browser-return measurement, not the billing ledger. It does not count all renewals or users who never return, decline consent, or block analytics. A SHA-256 receipt stays only in local storage for refresh dedupe; it is never sent to GA. Different devices can still count the same purchase separately. No revenue, transaction identifier, or GA ecommerce purchase payload is sent.
-- Normal GA page_view on refresh remains legitimate. Session/returning-user metrics follow GA's consent, cookie, device, and reporting constraints.
+- Filter v2/date when comparing older data: v1 feature_start combined opens/requests/reuse, and v1 checkout_start meant only URL creation.
+- Feature impressions dedupe by feature/navigation area in tab session storage, with 30-minute inactivity expiry. Offers also distinguish placement/tool. Rerender/refresh does not inflate impressions within this window.
+- Result/reopen impressions dedupe per request/reuse/try attempt. Opening the same existing result does not create a fresh success. Filter result_kind=requested for request-to-result analysis. Automatic results are discovery, not completion. Stage changes reset attribution without emitting an action.
+- Funnels are aggregate approximations: no attempt/content IDs are transmitted, so multiple requests cannot be individually joined. Visibility is not proof of reading. Today interaction measures only existing controls, not passive reading.
+- Saves prove local persistence, not cloud delivery. Saved lists are not reopens. Checkbox marking is self-reported state, not independently observed activity completion; feature_start action=try is not a generation request.
+- Signup is account creation, not email confirmation. Checkout start proves a browser window returned, not that Stripe finished loading. Created plus popup_blocked identifies a launch failure.
+- Conversion is consented browser-return measurement, not the billing ledger or a renewals/revenue report. Declined consent, blockers, no return, or another device affect counts. A SHA-256 receipt stays only in local storage for refresh dedupe; never sent to GA. Different devices may count one purchase separately.
 
-## Privacy and operations
+## Owner/developer traffic
 
-No GA User-ID, child identifiers, email, exact age, questions/answers, notes, moods, health topics, coordinates, sync codes, raw error strings, checkout reference, or content titles are sent. No automatic DOM-text/click capture is added. Account IDs are used internally only to reject stale authentication results. GA transport receives only a predefined vocabulary. Pending persistence/conversion events are discarded if consent changes.
+Open https://breezierdays.netlify.app/?analytics_test=1 in each testing browser, including the saved Home Screen browser where applicable. After consent this persists only breezier-days.analytics-test=1; events carry traffic_type=internal and debug_mode=true. Preview/localhost hosts are internal. ?analytics_test=0 removes the production-browser flag. Consent and other storage are unchanged.
 
-In GA4, register event-scoped custom dimensions for feature, entry_point, account_state, action, state, item_type, code, and placement as needed. Mark sign_up and premium_conversion as key events; avoid marking every view or click. Keep premium_conversion distinct from financial reporting. Build exploration funnels by feature using feature_view -> feature_start (action=request) -> result_view -> idea_save/saved_item_open; default result views and different attempts require aggregate interpretation, as no attempt identifiers are transmitted. Compare by device category and GA new/returning cohorts. Review enhanced measurement for unnecessary form/search/outbound text capture and exclude test traffic through an approved GA configuration. No GA Admin settings are changed by this code.
+Exclude traffic_type=internal (or include traffic_type=external) in real-user reports. Marking is forward-only; old owner traffic cannot reliably be separated. A GA internal-traffic filter in Testing state labels without discarding data. Validate classification before any permanent exclusion.
 
-Collect several representative weeks and enough users per major feature before product decisions. Review rates, repeat usage, failures/limits, saves/reopens, and account/Premium progression together; do not rank features solely by raw event totals.
+## Privacy and GA4 setup
+
+No User-ID, child identifiers/names, email, ages, questions/answers, notes, health topics, coordinates, sync codes, raw errors, checkout references, content titles, or Remember What Works feedback are sent. No new automatic text capture, paid service, API, or AI call. Pending persistence/conversion events are discarded if consent changes.
+
+The 13 event-scope dimensions registered in property 552900272 on September 10–11, 2026: feature, entry_point, account_state, action, state, item_type, code, placement, measurement_version, result_kind, offer_tool, interaction, traffic_type. debug_mode is built-in; no custom metrics needed. Allow processing time; definitions do not repair historical data.
+
+Use sign_up and premium_conversion as business key events rather than views/clicks. Compare devices and new/returning cohorts after excluding test traffic and gathering enough real users.
+

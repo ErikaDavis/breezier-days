@@ -10,7 +10,7 @@ import { useFamilyWeather } from './useFamilyWeather';
 import FamilyWeatherPanel from './FamilyWeatherPanel';
 import { forecastFor, weatherGuidance, adaptPlanToWeather } from './familyWeather';
 import AnalyticsConsent from './AnalyticsConsent';
-import { track, startFeature, helpFeature, itemType, analyticsEnabled, analyticsEpoch, recordVerifiedConversion, type AccountState } from './analytics';
+import { track, startFeature, resetResultAttribution, helpFeature, itemType, analyticsEnabled, analyticsEpoch, recordVerifiedConversion, type AccountState } from './analytics';
 import { useCloudSync } from './useCloudSync';
 import { verifyCheckout, checkPremiumStatus, createPremiumAccount, createCheckoutSession, createPortalSession, getPremiumUser, onPremiumAuthChange, requestPasswordReset, signInToPremium, updatePremiumPassword, type PremiumUser } from './supabaseClient';
 import { developmentTopics, getDevelopmentTopic, detectDevelopmentTopic, type DevelopmentGuidance } from './developmentData';
@@ -2250,6 +2250,7 @@ function App() {
   );
   const [showAll, setShowAll] = useState(false);
   useEffect(() => {
+    resetResultAttribution();
     setActivity(current => current.ages.includes(selectedAge) ? current : activities.find(item => item.ages.includes(selectedAge))!);
     setShowMoreDevelopment(false);
     setShowFullDayPlan(false);
@@ -2811,7 +2812,7 @@ function App() {
             if (checkoutReference && analyticsEnabled()) {
               const epoch = analyticsEpoch();
               void verifyCheckout(checkoutReference).then(payment => {
-                if (epoch === analyticsEpoch() && premiumUserIdRef.current === premiumUser.id) recordVerifiedConversion(payment.receipt || '', payment.verified);
+                if (epoch === analyticsEpoch() && premiumUserIdRef.current === premiumUser.id) { if (!payment.verified) track('feature_error', 'premium', {code:'verification_failed'}); recordVerifiedConversion(payment.receipt || '', payment.verified); }
               }).catch(() => {
                 if (epoch === analyticsEpoch() && premiumUserIdRef.current === premiumUser.id) track('feature_error', 'premium', { code: 'verification_failed' });
               });
@@ -2826,6 +2827,7 @@ function App() {
             setTimeout(poll, attempts < 3 ? 1500 : 3000);
           } else {
             setPremiumChecking(false);
+            track('feature_error', 'premium', {code:'verification_failed'});
             setCheckoutError(result.error || 'Your payment is still being verified. Use Restore Purchases to check again; you do not need to pay again.');
           }
         };
@@ -4624,25 +4626,26 @@ default:
       const { url, error } = await createCheckoutSession();
       setCheckoutLoading(false);
       if (error) {
-        track('feature_error', 'premium', { code: 'checkout_failed' });
+        track('feature_error', 'premium', { code: 'checkout_failed', offer_tool: premiumModalFeature ?? 'general' });
         setCheckoutError(error);
         return;
       }
       if (!url) {
-        track('feature_error', 'premium', { code: 'checkout_failed' });
+        track('feature_error', 'premium', { code: 'checkout_failed', offer_tool: premiumModalFeature ?? 'general' });
         setCheckoutError('Something went wrong creating your checkout session. Please try again.');
         return;
       }
-      track('premium_checkout_start', 'premium');
+      track('premium_checkout_created', 'premium', {offer_tool: premiumModalFeature ?? 'general'});
       setShowCheckoutConfirm(false);
       setTermsAccepted(false);
       const win = window.open(url, '_blank');
+      if (win) track('premium_checkout_start', 'premium', {offer_tool: premiumModalFeature ?? 'general'});
       if (!win) {
-        track('feature_blocked', 'premium', { code: 'popup_blocked' });
+        track('feature_blocked', 'premium', { code: 'popup_blocked', offer_tool: premiumModalFeature ?? 'general' });
         setCheckoutError('Your browser blocked the checkout window. Please allow popups for this site, or use this link: ' + url);
       }
     } catch {
-      track('feature_error', 'premium', { code: 'checkout_failed' });
+      track('feature_error', 'premium', { code: 'checkout_failed', offer_tool: premiumModalFeature ?? 'general' });
       setCheckoutLoading(false);
       setCheckoutError('Something went wrong. Please check your internet connection and try again.');
     }
@@ -4691,9 +4694,9 @@ default:
     }
     setCheckoutLoading(true);
     setPremiumAuthMessage(null);
-    const result = premiumAuthMode === 'sign-in'
+    const result = await (async () => { try { return premiumAuthMode === 'sign-in'
       ? await signInToPremium(email, premiumAuthPassword)
-      : await createPremiumAccount(email, premiumAuthPassword);
+      : await createPremiumAccount(email, premiumAuthPassword); } catch { return {error:'Sign-in could not complete. Please try again.'}; } })();
     setCheckoutLoading(false);
     if (result.error) { track('feature_error', 'account', { code: 'auth_failed' }); setPremiumAuthMessage(result.error); return; }
     if (premiumAuthMode === 'sign-up' && 'created' in result && result.created) track('sign_up', 'account');
@@ -6100,7 +6103,7 @@ const getDayLabel = (offset: number): string => {
     if (owner) {
       startFeature('growing_learning', 'try');
       const marked = !(owner.development || []).find(saved => saved.title === activity.title)?.completed;
-      afterStored('children', () => track('activity_try', 'growing_learning', { state: marked ? 'marked' : 'unmarked' }));
+      afterStored('children', () => track('activity_mark', 'growing_learning', { state: marked ? 'marked' : 'unmarked' }));
     }
     setChildren(current => current.map(child => {
       if (child.id !== childId) return child;
@@ -6380,7 +6383,7 @@ const getDayLabel = (offset: number): string => {
       <AnalyticsConsent page={activeNav} accountState={analyticsAccount} />
       {showPremiumModal && (
         <div className="legal-overlay" role="dialog" aria-modal="true" aria-label="Unlock Breezier Days Premium">
-          <div data-analytics-placement="modal" data-analytics-offer={!isPremium && !passwordRecovery ? "premium" : undefined} className="legal-modal premium-modal premium-modal-v2">
+          <div data-analytics-placement="modal" data-analytics-tool={premiumModalFeature ?? "general"} data-analytics-offer={!isPremium && !passwordRecovery ? "premium" : undefined} className="legal-modal premium-modal premium-modal-v2">
             <div className="legal-modal-header premium-modal-header-v2">
               <div className="premium-modal-badge">✦</div>
               <h2>Breezier Days Premium</h2>
@@ -10524,7 +10527,7 @@ const getDayLabel = (offset: number): string => {
               })()}
 
               {takingOverPlan && !isPremium && (
-                <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 16, padding: 18, borderRadius: 16, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                <div data-analytics-offer="premium" data-analytics-tool="taking_over" className="help-now-premium-upsell" style={{ marginTop: 16, padding: 18, borderRadius: 16, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                   <strong>🔒 Get the Full Caregiver Plan with Premium</strong>
                   <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55, fontSize: 13 }}>
                     Premium unlocks: backup strategies, keep-them-busy ideas, next-transition planning, age-specific strategies, multiple-child strategies, low-energy caregiver plans, and the ability to save your plans.
@@ -10892,7 +10895,7 @@ const getDayLabel = (offset: number): string => {
                       })()}
                     </>
                   ) : (
-                    <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                    <div data-analytics-offer="premium" data-analytics-tool="unlimited-help-now" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                       <strong>🔒 Get the Full Game Plan with Premium</strong>
                       <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55 }}>Premium unlocks unlimited personalized help plus full game plans: what to say, what to avoid, what to do next, why this may be happening, age-specific strategies, related help, the ability to refine advice with context, and the ability to save this answer.</p>
                       <button type="button" className="premium-unlock-button" onClick={() => unlockPremium('unlimited-help-now')}>✦ Unlock Premium — $4.99/month</button>
@@ -10944,7 +10947,7 @@ const getDayLabel = (offset: number): string => {
                       );
                     })()
                   ) : (
-                    <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                    <div data-analytics-offer="premium" data-analytics-tool="unlimited-help-now" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                       <strong>🔒 Get the Full Game Plan with Premium</strong>
                       <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55 }}>Premium unlocks: What to watch for, what you can do, when to ask about it, deeper context, and the ability to save this answer.</p>
                       <button type="button" className="premium-unlock-button" onClick={() => unlockPremium('unlimited-help-now')}>✦ Unlock Premium — $4.99/month</button>
@@ -11046,7 +11049,7 @@ const getDayLabel = (offset: number): string => {
         {/* These destinations now live in Explore/Home's primary quick actions.
             Keeping duplicate cards here made the main experience feel longer and repetitive. */}
         {!isPremium && (
-          <section data-analytics-offer="premium" className="premium-preview-showcase">
+          <section data-analytics-offer="premium" data-analytics-tool="general" className="premium-preview-showcase">
             <div className="premium-preview-showcase-heading">
               <span className="premium-preview-badge">✦ SEE PREMIUM IN ACTION</span>
               <h2>Breezier Days gets more useful when it knows your situation.</h2>
@@ -12268,7 +12271,7 @@ const getDayLabel = (offset: number): string => {
                 )}
 
                 {!isPremium && (
-                  <div data-analytics-offer="premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
+                  <div data-analytics-offer="premium" data-analytics-tool="home-reset-premium" className="help-now-premium-upsell" style={{ marginTop: 20, padding: 20, borderRadius: 18, background: '#f7f3ec', border: '1px solid rgba(95, 105, 94, 0.12)' }}>
                     <strong>🔒 Get Personalized Reset Plans with Premium</strong>
                     <p style={{ margin: '8px 0 12px', color: '#68716a', lineHeight: 1.55 }}>
                       Premium unlocks: room-by-room plans, if-you-have-more-time steps, age-appropriate tasks kids can help with, low-energy reset plans, before-guests reset, end-of-day reset, weekly reset plan, and the ability to save your favorite routines.

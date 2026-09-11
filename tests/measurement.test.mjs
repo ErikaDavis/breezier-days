@@ -15,7 +15,7 @@ function analytics(sessionStorage = storage(), localStorage = storage(), extras 
 test('no events, history or replay before consent; revocation stops immediately', () => {
   const session=storage(), a=analytics(session);
   a.startFeature('activities'); a.observeFeature('result_view','activities');
-  assert.equal(a.sent.length,0); assert.equal(session.getItem('breezier-days.measurement.v1'),null);
+  assert.equal(a.sent.length,0); assert.equal(session.getItem('breezier-days.measurement.v2'),null);
   a.enable(); assert.equal(a.sent.length,0);
   a.startFeature('activities'); assert.equal(a.sent.length,1);
   const epoch=a.analyticsEpoch(); a.setAnalyticsTransport(null);
@@ -24,7 +24,7 @@ test('no events, history or replay before consent; revocation stops immediately'
 test('only fixed vocabulary leaves the browser; arbitrary properties and identity are discarded', () => {
   const a=analytics();a.enable();a.setAnalyticsContext('https://secret.test?email=x','bad');
   a.track('activity_try','growing_learning',{state:'marked',email:'a@b.test',child_id:42,question:'private',code:'raw failure',item_type:'private',account_state:'premium',action:'try'});
-  assert.deepEqual(JSON.parse(JSON.stringify(a.sent[0])),{event:'activity_try',feature:'growing_learning',entry_point:'home',account_state:'premium',measurement_version:'1',state:'marked',action:'try'});
+  assert.deepEqual(JSON.parse(JSON.stringify(a.sent[0])),{event:'activity_try',feature:'growing_learning',entry_point:'home',account_state:'premium',measurement_version:'2',traffic_type:'external',state:'marked',action:'try'});
   a.track('private_event','activities');a.track('feature_start','private_health_topic');assert.equal(a.sent.length,1);
 });
 test('views survive refresh without duplicates, while explicit reuse produces a new result', () => {
@@ -65,4 +65,21 @@ test('invisible, background, or overlay-obscured surfaces do not count as viewed
   doc.visibilityState='hidden';callback([entry]);assert.equal(a.sent.length,0);
   doc.visibilityState='visible';modal={contains:()=>false};mutation();assert.equal(a.sent.length,0);
   modal=null;mutation();assert.equal(a.sent.length,1);mutation();assert.equal(a.sent.length,1);cleanup();
+});
+
+test('v2 distinguishes automatic results, opens, requests and reuse',()=>{const a=analytics();a.enable();a.observeFeature('result_view','activities');a.startFeature('activities');a.startFeature('activities','request');a.observeFeature('result_view','activities');a.startFeature('activities','reuse');a.observeFeature('result_view','activities');a.observeFeature('saved_item_open','activities');assert.deepEqual(a.sent.filter(e=>e.event==='result_view').map(e=>e.result_kind),['automatic','requested','reused']);assert.equal(a.sent.filter(e=>e.event==='feature_start').length,1);assert.equal(a.sent.filter(e=>e.event==='feature_open').length,1);assert.equal(a.sent.filter(e=>e.event==='feature_reuse').length,1);});
+test('new parameters are fixed vocabulary and never accept private input',()=>{const a=analytics();a.enable();a.track('premium_offer_view','premium',{offer_tool:'food-on-hand'});assert.equal(a.sent[0].offer_tool,'food-on-hand');a.track('today_interaction','today',{interaction:'weather_controls',offer_tool:'private child name',result_kind:'private answer'});assert.equal(a.sent[1].interaction,'weather_controls');assert.equal(a.sent[1].offer_tool,undefined);assert.equal(a.sent[1].result_kind,undefined);});
+test('test traffic is opt-in on production and never overrides consent',()=>{const local=storage();const win={location:{hostname:'breezierdays.netlify.app',search:'?analytics_test=1'}};const a=analytics(storage(),local,{window:win,URLSearchParams});a.track('feature_view','today');assert.equal(local.getItem('breezier-days.analytics-test'),null);a.enable();a.track('feature_view','today');assert.equal(a.sent[0].traffic_type,'internal');assert.equal(a.sent[0].debug_mode,true);win.location.search='';a.track('feature_open','activities');assert.equal(a.sent[1].traffic_type,'internal');win.location.search='?analytics_test=0';a.track('feature_open','activities');assert.equal(a.sent[2].traffic_type,'external');assert.equal(a.sent[2].debug_mode,undefined);});
+
+test('profile replacement cannot attribute automatic content to a previous request', () => {
+  const a=analytics(); a.enable(); a.startFeature('activities','request');
+  a.resetResultAttribution(); a.observeFeature('result_view','activities');
+  assert.equal(a.sent.at(-1).result_kind,'automatic');
+});
+
+test('test flags and preview hosts remain internal if storage is blocked', () => {
+  for (const location of [{hostname:'breezierdays.netlify.app',search:'?analytics_test=1'}, {hostname:'localhost',search:''}]) {
+    const a=analytics(storage(),{getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}},{window:{location},URLSearchParams});
+    a.enable(); a.track('feature_view','today'); assert.equal(a.sent[0].traffic_type,'internal');
+  }
 });
